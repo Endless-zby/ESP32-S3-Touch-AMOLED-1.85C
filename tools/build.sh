@@ -8,6 +8,11 @@ export ARDUINO_DIRECTORIES_USER="${ARDUINO_DIRECTORIES_USER:-$HOME/Documents/Ard
 FQBN="esp32:esp32:waveshare_esp32_s3_touch_lcd_185:PSRAM=enabled,FlashMode=qio,PartitionScheme=app3M_fat9M_16MB,USBMode=hwcdc,CDCOnBoot=cdc,UploadSpeed=921600"
 OUT="$ROOT/build"
 mkdir -p "$OUT"
-"$CLI" compile --fqbn "$FQBN" --build-path "$OUT" --library "$ROOT/libs/ESP_SR_AEC" "$ROOT/aicc_phone" "$@"
+# ESP-SR (AEC + MultiNet7 wake/command words) comes from the core's precompiled
+# esp-sr component now, so libs/ESP_SR_AEC is no longer linked: mixing two esp-sr
+# versions in one image would resolve aec_*/afe_* symbols from whichever archive
+# the linker happens to pick first. The sketch's partitions.csv adds the "model"
+# partition used by esp_srmodel_init("model").
+"$CLI" compile --fqbn "$FQBN" --build-path "$OUT" "$ROOT/aicc_phone" "$@"
 echo
 echo "Binaries: $OUT/aicc_phone.ino.bin  (merged: $OUT/aicc_phone.ino.merged.bin)"

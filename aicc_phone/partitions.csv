@@ -1,0 +1,10 @@
+# Custom layout for the speaker build (16 MB flash).
+# The ESP-SR model pack lives in its own 4 MB "model" partition so the sketch
+# can call esp_srmodel_init("model"); FFAT keeps the rest for recordings.
+# Name,   Type, SubType, Offset,   Size,      Flags
+nvs,      data, nvs,     0x9000,   0x5000,
+otadata,  data, ota,     0xe000,   0x2000,
+app0,     app,  ota_0,   0x10000,  0x400000,
+model,    data, spiffs,  0x410000, 0x400000,
+ffat,     data, fat,     0x810000, 0x7E0000,
+coredump, data, coredump,0xFF0000, 0x10000,

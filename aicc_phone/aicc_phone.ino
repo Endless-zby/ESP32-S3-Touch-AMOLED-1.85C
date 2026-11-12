@@ -12,6 +12,7 @@
 #include "ui.h"
 #include "ui_strings.h"
 #include "audio.h"
+#include "wake_word.h"
 #include "rtp.h"
 #include "sip.h"
 #include "web_portal.h"
@@ -333,6 +334,9 @@ void setup() {
   audio_set_aec_filter(g_settings.aecFilter);
   audio_start_task(&g_rtp);
 
+  // Wake word / command words (ESP-SR MultiNet7, model pack in the "model" partition)
+  WakeWord::begin();
+
   g_sip.onCallState = onCallState;
   g_sip.onRegState = onRegState;
   g_sip.onMediaStart = onMediaStart;
@@ -354,6 +358,17 @@ void loop() {
   web_loop();
   if (g_sipStarted) g_sip.loop();
   netLoop();
+
+  // Wake word events (Phase 1: log + a short click; command dispatch comes later)
+  {
+    int wcmd = -1;
+    float wprob = 0;
+    char wphrase[48];
+    if (WakeWord::consume(wcmd, wprob, wphrase, sizeof(wphrase))) {
+      Serial.printf("[WAKE] event cmd=%d \"%s\" prob=%.2f\n", wcmd, wphrase, (double)wprob);
+      audio_click();
+    }
+  }
 
   uint32_t now = millis();
 

@@ -80,6 +80,15 @@
 #define DEF_MIC_PGA      6       // ES7210 MIC1/MIC2 PGA gain code (6 = 18 dB). 30 dB clipped on speaker echo.
 #define DEF_REF_DIG_GAIN 4       // software gain on the reference channel before the AEC (x1..x8)
 #define DEF_RES_SUPPRESS 1       // residual echo suppression after the AEC while the far end is talking
+// ---- 唤醒词 / 命令词（ESP-SR 中文 MultiNet7）-------------------------------
+// 模型包在 flash 的 "model" 分区，命令表是包里的 fst/commands_cn.txt（拼音，逗号分隔）：
+//   1,xiao xi xiao xi          -> 小西小西
+// 改命令集：改 tools/srmodels 的 commands 文件重新打包后烧 model 分区（见 tools/flash.sh --models）。
+#define WAKE_WORD_ENABLED   1
+#define WAKE_MN_TIMEOUT_MS  3000     // 3 s 无命令则 MultiNet clean 重来
+#define WAKE_DET_THRESHOLD  0.20f    // MultiNet 内部检测阈值
+#define WAKE_MIN_PROB       0.20f    // 我们自己再卡一道置信度
+#define DEF_WAKE_MIC_PGA    10       // 待机监听时 ES7210 PGA code（10 = 30 dB，喇叭安静无削波风险）
 #define AUDIO_CFG_VERSION 4      // bump to reset the audio tuning fields stored in NVS
 #define SIP_LOCAL_PORT   5060
 #define RTP_LOCAL_PORT   20000

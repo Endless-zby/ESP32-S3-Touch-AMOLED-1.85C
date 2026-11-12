@@ -1,6 +1,7 @@
 #include "audio.h"
 #include "config.h"
 #include "board_io.h"
+#include "wake_word.h"
 #include "ESP_I2S.h"
 #include <math.h>
 #include <string.h>
@@ -500,6 +501,15 @@ static void audio_task(void *) {
       tone.reset();
       dsHist = usPrev = 0;
       pa_enable(m != AUDIO_IDLE);
+#if BOARD_V2
+      // Wake listening runs with the speaker silent, so the microphone can run at
+      // full analogue gain; restore the call-tuned PGA as soon as a call starts.
+      if (s_codecReady) {
+        const uint8_t pga = (m == AUDIO_IDLE) ? DEF_WAKE_MIC_PGA : s_micPga;
+        es7210_board_set_gain(1, pga);
+        es7210_board_set_gain(2, pga);
+      }
+#endif
       if (m != AUDIO_IDLE) {
         // prefill TX so the DMA never starts empty
         write_stereo(silence16);
@@ -529,8 +539,17 @@ static void audio_task(void *) {
         continue;
       }
       s_micLevel = s_spkLevel = 0;
+#if WAKE_WORD_ENABLED
+      // Idle = wake-word listening. The TDM clocks are driven by the TX channel,
+      // so keep writing silence and feed the raw slot-0 microphone to MultiNet.
+      write_stereo(silence16);   // also paces the loop (20 ms)
+      if (read_mic(mic16, ref16)) WakeWord::feed(mic16, FRAME_16K);
+      else vTaskDelay(pdMS_TO_TICKS(FRAME_MS));
+      continue;
+#else
       vTaskDelay(pdMS_TO_TICKS(20));
       continue;
+#endif
     }
 
     // ---- capture (paces the loop) ----
