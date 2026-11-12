@@ -310,28 +310,32 @@ static lv_obj_t *mk_bar(lv_obj_t *parent, uint32_t color, int y) {
 }
 
 static void build_call() {
+  // Dedicated in-call page: shown from dialling until the call is gone, so the
+  // face cannot fall back to "ringing" while audio is already flowing.
   scr_call = mk_screen();
-  call_status = mk_label(scr_call, STR_CALLING, &font_cn_18, COL_DIM, LV_ALIGN_TOP_MID, 0, 42);
-  call_party = mk_label(scr_call, "", &lv_font_montserrat_28, COL_TEXT, LV_ALIGN_TOP_MID, 0, 74);
-  lv_obj_set_width(call_party, 260);
+  lv_obj_add_flag(scr_call, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(scr_call, hang_event, LV_EVENT_SHORT_CLICKED, NULL);
+
+  call_status = mk_label(scr_call, STR_CALLING, &font_cn_18, COL_DIM, LV_ALIGN_TOP_MID, 0, 54);
+  call_timer = mk_label(scr_call, "00:00", &lv_font_montserrat_28, COL_TEXT, LV_ALIGN_CENTER, 0, -20);
+  call_party = mk_label(scr_call, "", &font_cn_18, COL_DIM, LV_ALIGN_CENTER, 0, 30);
+  lv_obj_set_width(call_party, 250);
   lv_obj_set_style_text_align(call_party, LV_TEXT_ALIGN_CENTER, 0);
   lv_label_set_long_mode(call_party, LV_LABEL_LONG_DOT);
-  call_timer = mk_label(scr_call, "00:00", &lv_font_montserrat_20, COL_DIM, LV_ALIGN_TOP_MID, 0, 118);
-  // level meters
-  mk_label(scr_call, LV_SYMBOL_AUDIO, &font_cn_18, COL_DIM, LV_ALIGN_CENTER, -95, -22);
-  call_bar_spk = mk_bar(scr_call, COL_ACCENT, -22);
-  mk_label(scr_call, LV_SYMBOL_UP, &font_cn_18, COL_DIM, LV_ALIGN_CENTER, -95, 0);
-  call_bar_mic = mk_bar(scr_call, COL_GREEN, 0);
-  call_vol_lbl = mk_label(scr_call, "", &font_cn_18, COL_ORANGE, LV_ALIGN_CENTER, 0, -50);
-  lv_obj_add_flag(call_vol_lbl, LV_OBJ_FLAG_HIDDEN);
 
-  // control row centred on y = 225 (offset +45)
-  call_mute_btn = mk_round_btn(scr_call, 56, COL_KEY, LV_SYMBOL_MUTE, &font_cn_24, -84, 45, mute_event);
-  call_mute_lbl = lv_obj_get_child(call_mute_btn, 0);
-  call_volm_btn = mk_round_btn(scr_call, 56, COL_KEY, LV_SYMBOL_VOLUME_MID, &font_cn_24, 0, 45, volm_event);
-  call_volp_btn = mk_round_btn(scr_call, 56, COL_KEY, LV_SYMBOL_VOLUME_MAX, &font_cn_24, 84, 45, volp_event);
-  // hang-up centred on y = 300 (offset +120)
-  call_hang_btn = mk_round_btn(scr_call, 72, COL_RED, LV_SYMBOL_CALL, &font_cn_24, 0, 120, hang_event);
+  // dim ring around the page, gives the call screen its own identity
+  lv_obj_t *ring = lv_obj_create(scr_call);
+  lv_obj_set_size(ring, 300, 300);
+  lv_obj_center(ring);
+  lv_obj_set_style_bg_opa(ring, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(ring, 2, 0);
+  lv_obj_set_style_border_color(ring, lv_color_hex(0x2B3140), 0);
+  lv_obj_set_style_radius(ring, LV_RADIUS_CIRCLE, 0);
+  lv_obj_clear_flag(ring, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_clear_flag(ring, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_move_background(ring);
+
+  call_hang_btn = mk_round_btn(scr_call, 76, COL_RED, LV_SYMBOL_CALL, &font_cn_24, 0, 118, hang_event);
   rotate_icon(lv_obj_get_child(call_hang_btn, 0));
 }
 
@@ -795,8 +799,8 @@ void ui_show_call(const char *party, const char *status) {
   lv_label_set_text(call_party, party);
   lv_label_set_text(call_status, status);
   lv_label_set_text(call_timer, "");
-  lv_bar_set_value(call_bar_mic, 0, LV_ANIM_OFF);
-  lv_bar_set_value(call_bar_spk, 0, LV_ANIM_OFF);
+  if (call_bar_mic) lv_bar_set_value(call_bar_mic, 0, LV_ANIM_OFF);
+  if (call_bar_spk) lv_bar_set_value(call_bar_spk, 0, LV_ANIM_OFF);
   s_muted = false;
   ui_set_muted(false);
   load(scr_call, UI_CALL);
@@ -807,16 +811,14 @@ void ui_call_timer(uint32_t seconds, bool show) {
   lv_label_set_text_fmt(call_timer, "%02lu:%02lu", (unsigned long)(seconds / 60), (unsigned long)(seconds % 60));
 }
 void ui_call_levels(uint8_t mic, uint8_t spk) {
-  lv_bar_set_value(call_bar_mic, mic, LV_ANIM_OFF);
-  lv_bar_set_value(call_bar_spk, spk, LV_ANIM_OFF);
+  (void)mic; (void)spk;   // the new call page shows the timer, not level bars
 }
 void ui_set_muted(bool muted) {
   s_muted = muted;
-  lv_obj_set_style_bg_color(call_mute_btn, lv_color_hex(muted ? COL_ORANGE : COL_KEY), 0);
+  if (call_mute_btn) lv_obj_set_style_bg_color(call_mute_btn, lv_color_hex(muted ? COL_ORANGE : COL_KEY), 0);
 }
 void ui_set_volume(int percent) {
   s_volume = percent;
-  if (s_screen == UI_CALL) show_volume_label();
   update_settings_volume();
 }
 

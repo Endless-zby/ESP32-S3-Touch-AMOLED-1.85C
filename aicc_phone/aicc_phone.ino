@@ -98,14 +98,12 @@ static void startSip() {
 static void onCallState(SipCallState s) {
   switch (s) {
     case SIP_CALL_INVITING:
-      ui_show_face();
       ui_face_listening(false);
-      ui_face_call_active(true);
-      ui_face_set_expr(EX_CONNECTING);
+      ui_show_call(g_sip.remoteParty().c_str(), STR_CALLING);
       audio_set_mode(AUDIO_IDLE);
       break;
     case SIP_CALL_RINGING:
-      ui_face_set_expr(EX_CONNECTING);
+      ui_call_status(STR_RINGING_OUT);
       if (audio_mode() != AUDIO_CALL) audio_set_mode(AUDIO_RINGBACK);
       break;
     case SIP_CALL_INCOMING:
@@ -114,11 +112,10 @@ static void onCallState(SipCallState s) {
       break;
     case SIP_CALL_CONNECTED:
       g_callConnectedAt = millis();
-      ui_show_face();
-      ui_face_call_active(true);
-      ui_face_set_expr(EX_LISTENING);
+      ui_show_call(g_sip.remoteParty().c_str(), STR_CONNECTED);   // stay on the call page
       break;
     case SIP_CALL_ENDING:
+      ui_call_status(STR_ENDING);
       audio_set_mode(AUDIO_IDLE);
       break;
     case SIP_CALL_IDLE: {
@@ -502,6 +499,7 @@ void loop() {
   // call timer / meters (4x per second)
   if (now - g_lastUiTick >= 250) {
     g_lastUiTick = now;
+    if (ui_screen() == UI_CALL && g_callConnectedAt) ui_call_timer((now - g_callConnectedAt) / 1000, true);
     if (ui_screen() == UI_FACE) ui_face_levels(audio_mic_level(), audio_spk_level());
     // return to the dialer a moment after a call has ended
     if (g_endedAt && g_sip.isIdle() && now - g_endedAt > 2500 && (ui_screen() == UI_CALL || ui_screen() == UI_INCOMING)) {
