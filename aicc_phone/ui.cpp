@@ -361,21 +361,25 @@ static void back_event(lv_event_t *) { key_click(); ui_show_face(); }
 static void reset_event(lv_event_t *) { key_click(); if (s_cb.onResetWifi) s_cb.onResetWifi(); }
 
 
+
 // ---------------------------------------------------------------------------
-// settings: a scrolling menu built from explicit coordinates (no flex layout,
-// sliders commit on release - a set_value() inside VALUE_CHANGED froze LVGL)
+// settings: iOS-style cards - a pastel fill grows with the value and fills the
+// whole rounded card, icon + title/subtitle on the left, value on the right.
+// Drag anywhere on the card; sliders commit on release (no set_value inside
+// VALUE_CHANGED, which used to deadlock LVGL).
 // ---------------------------------------------------------------------------
-static lv_obj_t *set_card(lv_obj_t *parent, int y, int h, uint32_t color, lv_event_cb_t cb) {
+#define SET_CARD_BG 0x22262F
+static lv_obj_t *set_card_base(lv_obj_t *parent, int y, int h) {
   lv_obj_t *c = lv_obj_create(parent);
   lv_obj_set_size(c, 300, h);
   lv_obj_align(c, LV_ALIGN_TOP_MID, 0, y);
-  lv_obj_set_style_radius(c, h / 2, 0);
-  lv_obj_set_style_bg_color(c, lv_color_hex(color), 0);
+  lv_obj_set_style_radius(c, 26, 0);
+  lv_obj_set_style_bg_color(c, lv_color_hex(SET_CARD_BG), 0);
   lv_obj_set_style_bg_opa(c, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(c, 0, 0);
   lv_obj_set_style_pad_all(c, 0, 0);
+  lv_obj_set_style_clip_corner(c, true, 0);
   lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
-  if (cb) { lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE); lv_obj_add_event_cb(c, cb, LV_EVENT_SHORT_CLICKED, NULL); }
   return c;
 }
 
@@ -387,49 +391,107 @@ static lv_obj_t *set_text(lv_obj_t *parent, const char *txt, const lv_font_t *fo
   return l;
 }
 
-static lv_obj_t *set_slider_card(lv_obj_t *parent, int y, const char *txt, int value, int vmin, int vmax, lv_obj_t **lblOut, lv_obj_t **sldOut) {
-  lv_obj_t *c = set_card(parent, y, 66, COL_CARD, NULL);
-  lv_obj_t *l = set_text(c, txt, &font_cn_18, COL_DIM);
-  lv_obj_align(l, LV_ALIGN_TOP_LEFT, 20, 8);
-  *lblOut = l;
-  lv_obj_t *sl = lv_slider_create(c);
-  lv_obj_set_size(sl, 264, 18);
-  lv_obj_align(sl, LV_ALIGN_BOTTOM_MID, 0, -8);
-  lv_slider_set_range(sl, vmin, vmax);
-  lv_slider_set_value(sl, value, LV_ANIM_OFF);
-  lv_obj_set_style_bg_color(sl, lv_color_hex(COL_KEY), LV_PART_MAIN);
-  lv_obj_set_style_radius(sl, 10, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(sl, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
-  lv_obj_set_style_radius(sl, 10, LV_PART_INDICATOR);
-  lv_obj_set_style_bg_color(sl, lv_color_white(), LV_PART_KNOB);
-  lv_obj_set_style_pad_all(sl, 0, LV_PART_KNOB);
-  *sldOut = sl;
-  return c;
+struct SetRow { lv_obj_t *card, *fill, *icon, *title, *sub, *val, *sl; };
+
+static void row_paint(SetRow &r, int v, int vmin, int vmax, bool percent) {
+  const int pct = vmax > vmin ? (v - vmin) * 100 / (vmax - vmin) : 0;
+  const int w = 300 * (pct < 4 ? 4 : pct) / 100;
+  lv_obj_set_width(r.fill, w);
+  const bool dark_text = w > 150;
+  const uint32_t fg = dark_text ? 0x1B1E24 : 0xE8ECF2;
+  lv_obj_set_style_text_color(r.title, lv_color_hex(fg), 0);
+  lv_obj_set_style_text_color(r.sub, lv_color_hex(dark_text ? 0x5A6068 : 0x9AA3B2), 0);
+  lv_obj_set_style_text_color(r.val, lv_color_hex(w > 262 ? 0x1B1E24 : 0xE8ECF2), 0);
+  if (percent) lv_label_set_text_fmt(r.val, "%d%%", v);
 }
 
-static void vol_sld_event(lv_event_t *e) {
+static void slider_row(lv_obj_t *parent, int y, const char *title, const char *sub,
+                       const char *icon, uint32_t pastel, int vmin, int vmax, int value, SetRow *r) {
+  r->card = set_card_base(parent, y, 70);
+  r->fill = lv_obj_create(r->card);
+  lv_obj_set_size(r->fill, 4, 70);
+  lv_obj_align(r->fill, LV_ALIGN_LEFT_MID, 0, 0);
+  lv_obj_set_style_radius(r->fill, 26, 0);
+  lv_obj_set_style_bg_color(r->fill, lv_color_hex(pastel), 0);
+  lv_obj_set_style_bg_opa(r->fill, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(r->fill, 0, 0);
+  lv_obj_clear_flag(r->fill, LV_OBJ_FLAG_SCROLLABLE);
+
+  r->icon = lv_obj_create(r->card);
+  lv_obj_set_size(r->icon, 44, 44);
+  lv_obj_align(r->icon, LV_ALIGN_LEFT_MID, 14, 0);
+  lv_obj_set_style_radius(r->icon, 14, 0);
+  lv_obj_set_style_bg_color(r->icon, lv_color_hex(0x2E333D), 0);
+  lv_obj_set_style_border_width(r->icon, 0, 0);
+  lv_obj_clear_flag(r->icon, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t *il = set_text(r->icon, icon, &font_cn_18, pastel);
+  lv_obj_center(il);
+
+  r->title = set_text(r->card, title, &font_cn_18, 0xE8ECF2);
+  lv_obj_align(r->title, LV_ALIGN_LEFT_MID, 70, -11);
+  r->sub = set_text(r->card, sub, &font_cn_18, 0x9AA3B2);
+  lv_obj_align(r->sub, LV_ALIGN_LEFT_MID, 70, 13);
+  r->val = set_text(r->card, "0%", &lv_font_montserrat_20, 0xE8ECF2);
+  lv_obj_align(r->val, LV_ALIGN_RIGHT_MID, -18, 0);
+
+  // transparent slider over the whole card: drag anywhere like iOS
+  r->sl = lv_slider_create(r->card);
+  lv_obj_set_size(r->sl, 300, 70);
+  lv_obj_align(r->sl, LV_ALIGN_CENTER, 0, 0);
+  lv_slider_set_range(r->sl, vmin, vmax);
+  lv_slider_set_value(r->sl, value, LV_ANIM_OFF);
+  lv_obj_set_style_bg_opa(r->sl, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(r->sl, LV_OPA_TRANSP, LV_PART_INDICATOR);
+  lv_obj_set_style_bg_opa(r->sl, LV_OPA_TRANSP, LV_PART_KNOB);
+  lv_obj_set_style_pad_all(r->sl, 0, LV_PART_KNOB);
+  row_paint(*r, value, vmin, vmax, true);
+}
+
+static SetRow g_vol_row, g_bri_row;
+static void vol_row_event(lv_event_t *e) {
   const lv_event_code_t code = lv_event_get_code(e);
-  if (code == LV_EVENT_VALUE_CHANGED) {
-    lv_label_set_text_fmt(set_vol_lbl, LV_SYMBOL_VOLUME_MAX "  " STR_VOLUME " %d%%", lv_slider_get_value(set_vol_sld));
-  } else if (code == LV_EVENT_RELEASED) {          // commit once, no write-back
-    const int v = lv_slider_get_value(set_vol_sld);
+  const int v = lv_slider_get_value(g_vol_row.sl);
+  if (code == LV_EVENT_VALUE_CHANGED) row_paint(g_vol_row, v, 0, 100, true);
+  else if (code == LV_EVENT_RELEASED) {
     const int d = v - (int)s_volume;
     s_volume = v;
     if (d && s_cb.onVolume) s_cb.onVolume(d);
   }
 }
-static void bri_sld_event(lv_event_t *e) {
-  if (lv_event_get_code(e) == LV_EVENT_RELEASED) {
-    if (lv_slider_get_value(set_bri_sld) < 20) lv_slider_set_value(set_bri_sld, 20, LV_ANIM_OFF);
-    s_brightness = (uint8_t)lv_slider_get_value(set_bri_sld);
+static void bri_row_event(lv_event_t *e) {
+  const int v = lv_slider_get_value(g_bri_row.sl);
+  if (lv_event_get_code(e) == LV_EVENT_VALUE_CHANGED) {
+    s_brightness = (uint8_t)v;
+    row_paint(g_bri_row, v, 20, 100, true);
     backlight_set(s_brightness);
-    return;
   }
-  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
-  s_brightness = (uint8_t)lv_slider_get_value(set_bri_sld);
-  lv_label_set_text_fmt(set_bri_lbl, LV_SYMBOL_EYE_OPEN "  " STR_BRIGHTNESS " %d%%", s_brightness);
-  backlight_set(s_brightness);
 }
+
+static lv_obj_t *list_row(lv_obj_t *parent, int y, const char *icon, uint32_t iconColor, uint32_t iconBg,
+                          const char *title, const char *sub, const char *right, lv_event_cb_t cb) {
+  lv_obj_t *c = set_card_base(parent, y, 62);
+  lv_obj_t *ib = lv_obj_create(c);
+  lv_obj_set_size(ib, 40, 40);
+  lv_obj_align(ib, LV_ALIGN_LEFT_MID, 14, 0);
+  lv_obj_set_style_radius(ib, 12, 0);
+  lv_obj_set_style_bg_color(ib, lv_color_hex(iconBg), 0);
+  lv_obj_set_style_border_width(ib, 0, 0);
+  lv_obj_clear_flag(ib, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t *il = set_text(ib, icon, &font_cn_18, iconColor);
+  lv_obj_center(il);
+  lv_obj_t *t = set_text(c, title, &font_cn_18, 0xE8ECF2);
+  lv_obj_align(t, LV_ALIGN_LEFT_MID, 66, -10);
+  lv_obj_t *sb = set_text(c, sub, &font_cn_18, 0x8A93A6);
+  lv_obj_align(sb, LV_ALIGN_LEFT_MID, 66, 12);
+  if (right) {
+    lv_obj_t *rl = set_text(c, right, &font_cn_18, 0x8A93A6);
+    lv_obj_align(rl, LV_ALIGN_RIGHT_MID, -16, 0);
+  }
+  lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE);
+  if (cb) lv_obj_add_event_cb(c, cb, LV_EVENT_SHORT_CLICKED, NULL);
+  return c;
+}
+
 static void set_dial_event(lv_event_t *) { key_click(); ui_show_dialer(); }
 static void set_info_event(lv_event_t *) { key_click(); load(scr_info, UI_INFO); }
 static void set_back_event(lv_event_t *) { key_click(); ui_show_face(); }
@@ -439,13 +501,14 @@ static void set_reset_event(lv_event_t *e) {
   lv_obj_t *c = (lv_obj_t *)lv_event_get_current_target(e);
   if (s_resetArmAt && millis() - s_resetArmAt < 4000) { s_resetArmAt = 0; if (s_cb.onResetWifi) s_cb.onResetWifi(); return; }
   s_resetArmAt = millis();
-  lv_obj_t *l = lv_obj_get_child(c, 0);
-  if (l) lv_label_set_text(l, "再点一次确认重新配网");
+  if (c) lv_obj_t *l = lv_obj_get_child(c, 3);   // title label
+  if (c) lv_label_set_text(lv_obj_get_child(c, 3), "再点一次确认");
 }
 
 static void update_settings_volume() {
-  if (set_vol_sld && lv_slider_get_value(set_vol_sld) != s_volume) lv_slider_set_value(set_vol_sld, s_volume, LV_ANIM_OFF);
-  if (set_vol_lbl) lv_label_set_text_fmt(set_vol_lbl, LV_SYMBOL_VOLUME_MAX "  " STR_VOLUME " %d%%", s_volume);
+  if (!g_vol_row.sl) return;
+  if (lv_slider_get_value(g_vol_row.sl) != s_volume) lv_slider_set_value(g_vol_row.sl, s_volume, LV_ANIM_OFF);
+  row_paint(g_vol_row, s_volume, 0, 100, true);
 }
 
 static void build_settings() {
@@ -457,30 +520,23 @@ static void build_settings() {
   lv_obj_set_style_border_width(set_menu, 0, 0);
   lv_obj_set_style_pad_all(set_menu, 0, 0);
   lv_obj_set_scrollbar_mode(set_menu, LV_SCROLLBAR_MODE_OFF);
-  lv_obj_set_size(set_menu, 320, 336);
 
-  lv_obj_t *t = set_text(set_menu, LV_SYMBOL_SETTINGS "  " STR_SETTINGS, &font_cn_24, COL_TEXT);
-  lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 6);
+  lv_obj_t *gear = set_text(set_menu, LV_SYMBOL_SETTINGS, &font_cn_24, 0xC9D0DA);
+  lv_obj_align(gear, LV_ALIGN_TOP_MID, 0, 2);
 
-  set_slider_card(set_menu, 46, LV_SYMBOL_VOLUME_MAX "  " STR_VOLUME, s_volume, 0, 100, &set_vol_lbl, &set_vol_sld);
-  lv_obj_add_event_cb(set_vol_sld, vol_sld_event, LV_EVENT_ALL, NULL);
-  set_slider_card(set_menu, 120, LV_SYMBOL_EYE_OPEN "  " STR_BRIGHTNESS, s_brightness, 20, 100, &set_bri_lbl, &set_bri_sld);
-  lv_obj_add_event_cb(set_bri_sld, bri_sld_event, LV_EVENT_ALL, NULL);
+  slider_row(set_menu, 46, STR_BRIGHTNESS, STR_SUB_BACKLIGHT, LV_SYMBOL_EYE_OPEN, 0xE3D6C3, 20, 100, 75, &g_bri_row);
+  lv_obj_add_event_cb(g_bri_row.sl, bri_row_event, LV_EVENT_ALL, NULL);
+  slider_row(set_menu, 124, STR_VOLUME, STR_SUB_VOLUME, LV_SYMBOL_VOLUME_MAX, 0xC9DED4, 0, 100, 60, &g_vol_row);
+  lv_obj_add_event_cb(g_vol_row.sl, vol_row_event, LV_EVENT_ALL, NULL);
   update_settings_volume();
-  lv_label_set_text_fmt(set_bri_lbl, LV_SYMBOL_EYE_OPEN "  " STR_BRIGHTNESS " %d%%", s_brightness);
 
-  lv_obj_t *dial = set_card(set_menu, 194, 52, COL_ACCENT, set_dial_event);
-  lv_obj_t *dl = set_text(dial, LV_SYMBOL_CALL "  " STR_DIALPAD, &font_cn_18, COL_TEXT);
-  lv_obj_center(dl);
-  lv_obj_t *rst = set_card(set_menu, 254, 52, COL_ORANGE, set_reset_event);
-  lv_obj_t *rl = set_text(rst, LV_SYMBOL_WIFI "  " STR_RESET_WIFI, &font_cn_18, COL_TEXT);
-  lv_obj_center(rl);
-  lv_obj_t *inf = set_card(set_menu, 314, 52, COL_KEY, set_info_event);
-  lv_obj_t *il = set_text(inf, LV_SYMBOL_LIST "  " STR_DEVICE_INFO, &font_cn_18, COL_TEXT);
-  lv_obj_center(il);
-  lv_obj_t *bak = set_card(set_menu, 374, 52, COL_KEY, set_back_event);
-  lv_obj_t *bl = set_text(bak, LV_SYMBOL_LEFT "  " STR_BACK, &font_cn_18, COL_TEXT);
-  lv_obj_center(bl);
+  lv_obj_t *sec = set_text(set_menu, STR_DEVICE, &font_cn_18, 0x8A93A6);
+  lv_obj_align(sec, LV_ALIGN_TOP_LEFT, 18, 204);
+
+  list_row(set_menu, 228, LV_SYMBOL_LIST, 0x7EA6D9, 0x24303E, STR_DEVICE_INFO, STR_SUB_INFO, ">", set_info_event);
+  list_row(set_menu, 296, LV_SYMBOL_CALL, 0x8FBF9F, 0x24322A, STR_DIALPAD, STR_SUB_DIAL, ">", set_dial_event);
+  list_row(set_menu, 364, LV_SYMBOL_WIFI, 0xD9A08A, 0x35281F, STR_RESET_WIFI, STR_SUB_RESET, ">", set_reset_event);
+  list_row(set_menu, 432, LV_SYMBOL_LEFT, 0xC9D0DA, 0x2A2F38, STR_BACK, STR_SETTINGS, "", set_back_event);
   backlight_set(s_brightness);
 }
 
@@ -494,11 +550,7 @@ static void build_info() {
     lv_obj_set_style_text_align(info_lines[i], LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(info_lines[i], LV_LABEL_LONG_DOT);
   }
-  lv_obj_t *bak = set_card(scr_info, 210, 46, COL_KEY, NULL);
-  lv_obj_t *bl = set_text(bak, LV_SYMBOL_LEFT "  " STR_BACK, &font_cn_18, COL_TEXT);
-  lv_obj_center(bl);
-  lv_obj_add_flag(bak, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_add_event_cb(bak, info_back_event, LV_EVENT_SHORT_CLICKED, NULL);
+  lv_obj_t *bak = mk_pill_btn(scr_info, 170, 46, COL_KEY, LV_SYMBOL_LEFT "  " STR_BACK, &font_cn_18, 0, 104, info_back_event);
 }
 
 
