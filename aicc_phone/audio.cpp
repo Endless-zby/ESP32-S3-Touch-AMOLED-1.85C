@@ -467,6 +467,9 @@ static void audio_task(void *) {
   int clickFrames = 0;
   uint32_t lastStat = 0;
   uint8_t refLevel = 0, rawMicLevel = 0;
+  // 2 s window statistics (peak of per-frame peaks)
+  uint8_t wSlot[4] = {0, 0, 0, 0}, wMic = 0, wOut = 0, wRef = 0, wSpk = 0;
+  uint16_t wFrames = 0, wFarActive = 0, wNearOut = 0;   // frames with speaker active / with AEC output > 5%
 
   for (;;) {
     AudioMode m = s_mode;
@@ -529,6 +532,10 @@ static void audio_task(void *) {
       }
       refLevel = level_of(ref16, FRAME_16K);
       rawMicLevel = level_of(mic16, FRAME_16K);
+      for (int k = 0; k < 4; k++) if (s_slotLevel[k] > wSlot[k]) wSlot[k] = s_slotLevel[k];
+      if (rawMicLevel > wMic) wMic = rawMicLevel;
+      if (refLevel > wRef) wRef = refLevel;
+      wFrames++;
 #endif
       downsample(src, mic8, dsHist);
       int32_t g = s_micGain;  // percent
@@ -540,12 +547,20 @@ static void audio_task(void *) {
         mic8[i] = sat16(v);
       }
       s_micLevel = level_of(mic8, FRAME_8K);
+#if BOARD_V2
+      if (s_micLevel > wOut) wOut = s_micLevel;
+      if (s_micLevel > 5) wNearOut++;
+#endif
       s_rtp->sendFrame(mic8);
 
       // ---- downlink ----
       s_rtp->pump();
       if (s_rtp->popFrame(spk8)) {
         s_spkLevel = level_of(spk8, FRAME_8K);
+#if BOARD_V2
+        if (s_spkLevel > wSpk) wSpk = s_spkLevel;
+        if (s_spkLevel > 5) wFarActive++;
+#endif
         if (s_spkLevel > 6) echoHold = 160; else if (echoHold >= FRAME_MS) echoHold -= FRAME_MS; else echoHold = 0;
         upsample(spk8, spk16, usPrev);
       } else {
@@ -576,16 +591,17 @@ static void audio_task(void *) {
       if (now - lastStat > 2000) {
         lastStat = now;
         if (s_aec.active() && s_aec.procCount) {
-          Serial.printf("[AEC] avg %lu us / chunk(%d) max %lu us  slots=[%u %u %u %u] mic(s%u)=%u aecout=%u ref=%u spk=%u lag=%dms corr=%.2f\n",
-                        (unsigned long)(s_aec.procUs / s_aec.procCount), s_aec.chunk, (unsigned long)s_aec.procMaxUs,
-                        s_slotLevel[0], s_slotLevel[1], s_slotLevel[2], s_slotLevel[3],
-                        s_micSlot, rawMicLevel, s_micLevel, refLevel, s_spkLevel, lagMs, lagCorr);
+          Serial.printf("[AEC] %lu/%lu us  peak2s slots=[%u %u %u %u] mic(s%u)=%u out=%u ref=%u spk=%u  far=%u%% out>5=%u%% lag=%dms corr=%.2f\n",
+                        (unsigned long)(s_aec.procUs / s_aec.procCount), (unsigned long)s_aec.procMaxUs,
+                        wSlot[0], wSlot[1], wSlot[2], wSlot[3], s_micSlot, wMic, wOut, wRef, wSpk,
+                        wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? wNearOut * 100 / wFrames : 0, lagMs, lagCorr);
           s_aec.procUs = 0; s_aec.procCount = 0; s_aec.procMaxUs = 0;
         } else {
-          Serial.printf("[AUDIO] slots=[%u %u %u %u] mic(s%u)=%u out=%u ref=%u spk=%u lag=%dms corr=%.2f (aec off)\n",
-                        s_slotLevel[0], s_slotLevel[1], s_slotLevel[2], s_slotLevel[3],
-                        s_micSlot, rawMicLevel, s_micLevel, refLevel, s_spkLevel, lagMs, lagCorr);
+          Serial.printf("[AUDIO] peak2s slots=[%u %u %u %u] mic(s%u)=%u out=%u ref=%u spk=%u far=%u%% out>5=%u%% lag=%dms corr=%.2f (aec off)\n",
+                        wSlot[0], wSlot[1], wSlot[2], wSlot[3], s_micSlot, wMic, wOut, wRef, wSpk,
+                        wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? wNearOut * 100 / wFrames : 0, lagMs, lagCorr);
         }
+        memset(wSlot, 0, sizeof(wSlot)); wMic = wOut = wRef = wSpk = 0; wFrames = wFarActive = wNearOut = 0;
       }
 #endif
       continue;

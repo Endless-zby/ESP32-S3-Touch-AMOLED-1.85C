@@ -76,8 +76,8 @@
 #define DEF_REF_SLOT     1       // V2: ES7210 TDM slot with the DAC loopback (MIC3), 4 = software reference
 #define DEF_REF_DELAY_MS 40      // software reference delay (tune with the lag= value in the serial log)
 #define DEF_AEC_FILTER   4       // esp-sr AEC filter_length (echo tail ~ n x 16 ms)
-#define DEF_REF_GAIN     10      // ES7210 MIC3 PGA gain code (10 = 30 dB, same as the voice mics)
-#define AUDIO_CFG_VERSION 2      // bump to reset the audio tuning fields stored in NVS
+#define DEF_REF_GAIN     14      // ES7210 MIC3 PGA gain code (14 = 37.5 dB; the on-board attenuator is ~-24 dB)
+#define AUDIO_CFG_VERSION 3      // bump to reset the audio tuning fields stored in NVS
 #define SIP_LOCAL_PORT   5060
 #define RTP_LOCAL_PORT   20000
 
