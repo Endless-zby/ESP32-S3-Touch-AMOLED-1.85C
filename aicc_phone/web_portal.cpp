@@ -270,11 +270,7 @@ void web_begin() {
 
 void web_start_ap() {
   if (s_apActive) return;
-  uint8_t mac[6];
-  WiFi.macAddress(mac);
-  char suffix[8];
-  snprintf(suffix, sizeof(suffix), "%02X%02X", mac[4], mac[5]);
-  s_apSsid = String(AP_SSID_PREFIX) + suffix;
+  s_apSsid = web_ap_ssid();
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAPConfig(IPAddress(192, 168, 4, 1), IPAddress(192, 168, 4, 1), IPAddress(255, 255, 255, 0));
   WiFi.softAP(s_apSsid.c_str(), AP_PASSWORD);
@@ -298,10 +294,9 @@ void web_stop_ap() {
 bool web_ap_active() { return s_apActive; }
 String web_ap_ssid() {
   if (s_apSsid.length() == 0) {
-    uint8_t mac[6];
-    WiFi.macAddress(mac);
+    uint64_t mac = ESP.getEfuseMac();   // valid before the WiFi driver is started
     char suffix[8];
-    snprintf(suffix, sizeof(suffix), "%02X%02X", mac[4], mac[5]);
+    snprintf(suffix, sizeof(suffix), "%02X%02X", (unsigned)((mac >> 32) & 0xFF), (unsigned)((mac >> 40) & 0xFF));
     s_apSsid = String(AP_SSID_PREFIX) + suffix;
   }
   return s_apSsid;

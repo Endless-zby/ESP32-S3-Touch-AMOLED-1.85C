@@ -4,7 +4,7 @@
 #include "touch.h"
 #include <esp_heap_caps.h>
 
-#define BUF_LINES 40
+#define BUF_LINES 24
 
 static lv_display_t *s_disp = NULL;
 

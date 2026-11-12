@@ -30,7 +30,7 @@ static lv_obj_t *scr_setup, *setup_ssid, *setup_pass, *setup_url, *setup_status;
 static lv_obj_t *scr_dialer, *dial_status_icon, *dial_status_text, *dial_number, *dial_keypad, *dial_call_btn, *dial_del_btn, *dial_set_btn;
 static lv_obj_t *scr_call, *call_status, *call_party, *call_timer, *call_bar_mic, *call_bar_spk, *call_mute_btn, *call_mute_lbl, *call_volm_btn, *call_volp_btn, *call_hang_btn, *call_vol_lbl;
 static lv_obj_t *scr_in, *in_caller, *in_answer_btn, *in_reject_btn;
-static lv_obj_t *scr_set, *set_lines[4], *set_back_btn, *set_reset_btn;
+static lv_obj_t *scr_set, *set_lines[4], *set_back_btn, *set_reset_btn, *set_vol_lbl, *set_vol_bar, *set_volm_btn, *set_volp_btn;
 static lv_obj_t *toast_lbl = NULL;
 static lv_timer_t *toast_timer = NULL;
 static lv_timer_t *vol_timer = NULL;
@@ -327,17 +327,39 @@ static void build_incoming() {
 static void back_event(lv_event_t *) { key_click(); ui_show_dialer(); }
 static void reset_event(lv_event_t *) { key_click(); if (s_cb.onResetWifi) s_cb.onResetWifi(); }
 
+static void set_volm_event(lv_event_t *) { key_click(); if (s_cb.onVolume) s_cb.onVolume(-10); }
+static void set_volp_event(lv_event_t *) { key_click(); if (s_cb.onVolume) s_cb.onVolume(+10); }
+
+static void update_settings_volume() {
+  if (!set_vol_lbl) return;
+  lv_label_set_text_fmt(set_vol_lbl, LV_SYMBOL_VOLUME_MAX " " STR_VOLUME " %d%%", s_volume);
+  lv_bar_set_value(set_vol_bar, s_volume, LV_ANIM_ON);
+}
+
 static void build_settings() {
   scr_set = mk_screen();
-  mk_label(scr_set, LV_SYMBOL_SETTINGS " " STR_SETTINGS, &font_cn_24, COL_TEXT, LV_ALIGN_TOP_MID, 0, 36);
+  mk_label(scr_set, LV_SYMBOL_SETTINGS " " STR_SETTINGS, &font_cn_24, COL_TEXT, LV_ALIGN_TOP_MID, 0, 34);
   for (int i = 0; i < 4; i++) {
-    set_lines[i] = mk_label(scr_set, "", &font_cn_18, COL_DIM, LV_ALIGN_TOP_MID, 0, 82 + i * 28);
+    set_lines[i] = mk_label(scr_set, "", &font_cn_18, COL_DIM, LV_ALIGN_TOP_MID, 0, 76 + i * 26);
     lv_obj_set_width(set_lines[i], 250);
     lv_obj_set_style_text_align(set_lines[i], LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(set_lines[i], LV_LABEL_LONG_DOT);
   }
-  set_reset_btn = mk_pill_btn(scr_set, 170, 44, COL_ORANGE, LV_SYMBOL_WIFI " " STR_RESET_WIFI, &font_cn_18, 0, 42, reset_event);
-  set_back_btn = mk_pill_btn(scr_set, 130, 42, COL_KEY, LV_SYMBOL_LEFT " " STR_BACK, &font_cn_18, 0, 118, back_event);
+  // volume row (centre y = 180 + 14)
+  set_volm_btn = mk_round_btn(scr_set, 44, COL_KEY, LV_SYMBOL_MINUS, &font_cn_18, -95, 14, set_volm_event);
+  set_volp_btn = mk_round_btn(scr_set, 44, COL_KEY, LV_SYMBOL_PLUS, &font_cn_18, 95, 14, set_volp_event);
+  set_vol_bar = lv_bar_create(scr_set);
+  lv_obj_set_size(set_vol_bar, 110, 10);
+  lv_obj_align(set_vol_bar, LV_ALIGN_CENTER, 0, 14);
+  lv_bar_set_range(set_vol_bar, 0, 100);
+  lv_obj_set_style_bg_color(set_vol_bar, lv_color_hex(COL_KEY), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(set_vol_bar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
+  lv_obj_set_style_radius(set_vol_bar, 5, LV_PART_MAIN);
+  lv_obj_set_style_radius(set_vol_bar, 5, LV_PART_INDICATOR);
+  set_vol_lbl = mk_label(scr_set, "", &font_cn_18, COL_TEXT, LV_ALIGN_CENTER, 0, 44);
+  update_settings_volume();
+  set_reset_btn = mk_pill_btn(scr_set, 170, 42, COL_ORANGE, LV_SYMBOL_WIFI " " STR_RESET_WIFI, &font_cn_18, 0, 82, reset_event);
+  set_back_btn = mk_pill_btn(scr_set, 126, 40, COL_KEY, LV_SYMBOL_LEFT " " STR_BACK, &font_cn_18, 0, 128, back_event);
 }
 
 // ---------------------------------------------------------------------------
@@ -437,6 +459,7 @@ void ui_set_muted(bool muted) {
 void ui_set_volume(int percent) {
   s_volume = percent;
   if (s_screen == UI_CALL) show_volume_label();
+  update_settings_volume();
 }
 
 void ui_show_incoming(const char *caller) {

@@ -195,8 +195,10 @@ static void onWifiConnected() {
   g_net = NET_CONNECTED;
   web_begin();
   web_set_status("连接成功", WiFi.localIP().toString(), true);
-  if (g_portalWifiAttempt) {
-    g_settings.save();
+  // Persist whatever credentials got us online (covers a portal attempt that
+  // briefly looked failed before succeeding).
+  if (WiFi.SSID() == g_settings.wifiSsid || g_settings.wifiSsid.length()) g_settings.save();
+  if (g_portalWifiAttempt || web_ap_active()) {
     g_portalWifiAttempt = false;
     g_apStopAt = millis() + 45000;   // keep the AP a little longer so the phone sees the result
   }
@@ -239,7 +241,7 @@ static void netLoop() {
     case NET_CONNECTING:
       if (st == WL_CONNECTED) {
         onWifiConnected();
-      } else if (now - g_netSince > 25000 || st == WL_CONNECT_FAILED) {
+      } else if (now - g_netSince > 25000 || (st == WL_CONNECT_FAILED && now - g_netSince > 8000)) {
         Serial.println("[NET] connect failed");
         if (g_portalWifiAttempt) {
           g_portalWifiAttempt = false;
@@ -365,6 +367,12 @@ void loop() {
       static uint32_t lastSet = 0;
       if (now - lastSet > 2000) { lastSet = now; showSettings(); }
     }
+  }
+
+  static uint32_t lastHeapLog = 0;
+  if (now - lastHeapLog > 30000) {
+    lastHeapLog = now;
+    Serial.printf("[APP] heap free=%u min=%u psram=%u\n", (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(), (unsigned)ESP.getFreePsram());
   }
 
   // media watchdog: no RTP for 15 s during a connected call -> hang up

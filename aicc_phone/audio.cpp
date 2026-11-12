@@ -203,7 +203,7 @@ struct SampleFifo {
   int cap = 0, head = 0, count = 0;
   bool init(int capacity) {
     cap = capacity;
-    buf = (int16_t *)heap_caps_malloc(cap * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    buf = (int16_t *)heap_caps_malloc(cap * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     head = count = 0;
     return buf != nullptr;
   }
@@ -235,7 +235,16 @@ struct Aec {
     stop();
     if (m == 0) return false;
     aec_mode_t am = (m >= 2) ? AEC_MODE_VOIP_HIGH_PERF : AEC_MODE_VOIP_LOW_COST;
-    h = aec_create(AUDIO_HW_RATE, 4, 1, am);
+    aec_config_t cfg = {};
+    cfg.mic_num = 1;
+    cfg.ref_num = 1;
+    cfg.out_num = 1;
+    cfg.filter_length = 4;
+    cfg.sample_rate = AUDIO_HW_RATE;
+    cfg.caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;   // keep internal RAM for WiFi/lwIP
+    cfg.mode = am;
+    cfg.nlp_level = AEC_NLP_LEVEL_AGGR;
+    h = aec_create_from_config(&cfg);
     if (!h) { Serial.println("[AEC] create failed"); return false; }
     chunk = aec_get_chunksize(h);
     if (chunk <= 0 || chunk > 2048) { Serial.printf("[AEC] bad chunk %d\n", chunk); stop(); return false; }
@@ -247,7 +256,7 @@ struct Aec {
     if (!bufMic || !bufRef || !bufOut) { stop(); return false; }
     mode = m;
     procUs = procMaxUs = procCount = 0;
-    Serial.printf("[AEC] started mode=%d chunk=%d free=%u\n", m, chunk, (unsigned)ESP.getFreeHeap());
+    Serial.printf("[AEC] started mode=%d chunk=%d free=%u psram=%u\n", m, chunk, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
     return true;
   }
   void stop() {
