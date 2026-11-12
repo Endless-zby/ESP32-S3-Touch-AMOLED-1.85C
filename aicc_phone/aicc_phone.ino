@@ -450,8 +450,7 @@ void loop() {
     if (bootNow && !bootWas && bn - bootAt > 250) {
       bootAt = bn;
       audio_click();
-      if (ui_screen() == UI_SETTINGS || ui_screen() == UI_INFO) ui_settings_back();
-      else if (ui_screen() == UI_DIALER) ui_show_face();
+      if (ui_screen() == UI_SETTINGS) ui_show_face();
       else showSettings();
     }
     bootWas = bootNow;
@@ -483,7 +482,7 @@ void loop() {
       ui_show_face();
       refreshNetStatus();
     }
-    if (ui_screen() == UI_SETTINGS || ui_screen() == UI_INFO) {
+    if (ui_screen() == UI_SETTINGS) {
       static uint32_t lastSet = 0;
       if (now - lastSet > 2000) { lastSet = now; showSettings(); }
     }

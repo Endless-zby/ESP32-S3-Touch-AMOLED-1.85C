@@ -14,7 +14,7 @@ struct UiCallbacks {
   void (*onSettings)() = nullptr;          // gear button pressed
 };
 
-enum UiScreen { UI_BOOT, UI_SETUP, UI_FACE, UI_DIALER, UI_CALL, UI_INCOMING, UI_SETTINGS, UI_INFO };
+enum UiScreen { UI_BOOT, UI_SETUP, UI_FACE, UI_DIALER, UI_CALL, UI_INCOMING, UI_SETTINGS };
 
 void ui_init(const UiCallbacks &cb);
 UiScreen ui_screen();
@@ -24,8 +24,7 @@ void ui_show_face();
 void ui_face_set_expr(int exprId);
 void ui_face_call_active(bool active);   // show the hang-up button; tapping the face hangs up
 void ui_face_levels(uint8_t mic, uint8_t spk);   // listening / speaking expressions
-void ui_face_listening(bool on);
-void ui_settings_back();   // info page -> menu, menu -> face   // purple breathing ring: wake word heard, waiting for a command
+void ui_face_listening(bool on);   // purple breathing ring: wake word heard, waiting for a command
 
 void ui_show_boot(const char *status);
 void ui_boot_status(const char *status);
