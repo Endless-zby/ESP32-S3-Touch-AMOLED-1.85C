@@ -9,6 +9,7 @@
 #include "board_io.h"
 #include <esp_heap_caps.h>
 #include <time.h>
+#include <math.h>
 
 LV_FONT_DECLARE(font_cn_18);
 LV_FONT_DECLARE(font_cn_24);
@@ -50,7 +51,7 @@ static FaceModel s_face;
 static FaceRenderer s_faceR;
 static uint16_t *s_faceBuf = NULL;
 static lv_image_dsc_t s_faceDsc;
-static lv_obj_t *scr_face, *face_canvas, *face_clock, *face_batt, *face_batt_fill, *face_charge, *face_hang;
+static lv_obj_t *scr_face, *face_canvas, *face_clock, *face_batt, *face_batt_fill, *face_charge, *face_batt_pct, *face_ring, *face_hang;
 static lv_timer_t *face_timer = NULL;
 static bool s_faceCall = false;
 static uint32_t s_battAt = 0;
@@ -60,6 +61,7 @@ static int s_battPct = -1;
 // deflection after ~95 px), the gaze holds for 200 ms, and a long press closes
 // the eyes - same behaviour as the reference PetEyes/HotelPet sketches.
 static bool s_faceTouch = false, s_faceLong = false, s_gazeActive = false;
+static bool s_listenRing = false;
 static int16_t s_faceStartX = 0, s_faceStartY = 0;
 static uint32_t s_gazeAt = 0;
 
@@ -459,6 +461,11 @@ static void face_battery_update(bool force) {
   lv_obj_set_width(face_batt_fill, pct > 0 ? (pct * 30 / 100 + 2) : 0);
   lv_obj_set_style_bg_color(face_batt_fill, lv_color_hex(pct <= 20 ? COL_RED : COL_TEXT), 0);
   lv_obj_set_style_border_color(face_batt, lv_color_hex(present ? COL_DIM : COL_RED), 0);
+  if (face_batt_pct) {
+    if (present) lv_label_set_text_fmt(face_batt_pct, "%d%%", pct);
+    else lv_label_set_text(face_batt_pct, "--");
+    lv_obj_set_style_text_color(face_batt_pct, lv_color_hex(pct <= 20 ? COL_RED : COL_DIM), 0);
+  }
 }
 
 static void face_timer_cb(lv_timer_t *) {
@@ -475,6 +482,12 @@ static void face_timer_cb(lv_timer_t *) {
   if (s_gazeActive && now - s_gazeAt > 200) {
     s_gazeActive = false;
     s_face.setGazeOverride(false, 0, 0);   // back to the idle gaze wander
+  }
+  if (s_listenRing && face_ring) {
+    const float ph = (float)(now % 1600) * (2.f * (float)M_PI / 1600.f);   // 1.6 s breath
+    const float b = 0.5f + 0.5f * sinf(ph);
+    lv_obj_set_style_border_opa(face_ring, (lv_opa_t)(40.f + 170.f * b), 0);
+    lv_obj_set_style_shadow_opa(face_ring, (lv_opa_t)(20.f + 130.f * b), 0);
   }
   if (now - lastClock >= 1000) { lastClock = now; face_clock_update(); }
   if (now - s_battAt > 5000) { s_battAt = now; face_battery_update(false); }
@@ -525,11 +538,28 @@ static void build_face() {
   lv_obj_set_style_bg_color(face_batt_fill, lv_color_hex(COL_TEXT), 0);
   lv_obj_set_style_border_width(face_batt_fill, 0, 0);
   lv_obj_set_style_radius(face_batt_fill, 2, 0);
+  face_batt_pct = mk_label(scr_face, "--", &font_cn_18, COL_DIM, LV_ALIGN_TOP_RIGHT, -64, 14);
   face_charge = lv_label_create(face_batt);
   lv_label_set_text(face_charge, LV_SYMBOL_CHARGE);
   lv_obj_set_style_text_font(face_charge, &font_cn_18, 0);
   lv_obj_set_style_text_color(face_charge, lv_color_hex(COL_ORANGE), 0);
   lv_obj_align(face_charge, LV_ALIGN_CENTER, 0, 0);
+
+  // purple breathing ring around the rim while the wake word waits for a command
+  face_ring = lv_obj_create(scr_face);
+  lv_obj_set_size(face_ring, LCD_W - 16, LCD_H - 16);
+  lv_obj_center(face_ring);
+  lv_obj_set_style_bg_opa(face_ring, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(face_ring, 6, 0);
+  lv_obj_set_style_border_color(face_ring, lv_color_hex(0x8B5CF6), 0);
+  lv_obj_set_style_border_opa(face_ring, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_shadow_color(face_ring, lv_color_hex(0x8B5CF6), 0);
+  lv_obj_set_style_shadow_width(face_ring, 24, 0);
+  lv_obj_set_style_shadow_spread(face_ring, 2, 0);
+  lv_obj_set_style_shadow_opa(face_ring, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_radius(face_ring, LV_RADIUS_CIRCLE, 0);
+  lv_obj_clear_flag(face_ring, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_clear_flag(face_ring, LV_OBJ_FLAG_SCROLLABLE);
 
   face_hang = mk_round_btn(scr_face, 64, COL_RED, LV_SYMBOL_CALL, &font_cn_24, 0, 118, face_hang_event);
   lv_obj_add_flag(face_hang, LV_OBJ_FLAG_HIDDEN);
@@ -679,6 +709,14 @@ void ui_face_call_active(bool active) {
   if (!face_hang) return;
   if (active) lv_obj_clear_flag(face_hang, LV_OBJ_FLAG_HIDDEN);
   else lv_obj_add_flag(face_hang, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_face_listening(bool on) {
+  s_listenRing = on;
+  if (face_ring) {
+    lv_obj_set_style_border_opa(face_ring, on ? LV_OPA_60 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_shadow_opa(face_ring, on ? LV_OPA_40 : LV_OPA_TRANSP, 0);
+  }
 }
 
 void ui_face_levels(uint8_t mic, uint8_t spk) {

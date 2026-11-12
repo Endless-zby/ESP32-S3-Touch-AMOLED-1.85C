@@ -99,6 +99,7 @@ static void onCallState(SipCallState s) {
   switch (s) {
     case SIP_CALL_INVITING:
       ui_show_face();
+      ui_face_listening(false);
       ui_face_call_active(true);
       ui_face_set_expr(EX_CONNECTING);
       audio_set_mode(AUDIO_IDLE);
@@ -393,12 +394,15 @@ void loop() {
           g_awakeActive = true;
           audio_prompt(AUDIO_PROMPT_WAKE);
           ui_toast(STR_LISTENING, kAwakeWindowMs);
+          ui_face_listening(true);
+          ui_face_set_expr(EX_ATTENTIVE);
           break;
         case WAKE_CMD_VOL_UP:
         case WAKE_CMD_VOL_UP2:
           if (!awake) break;
           uiVolume(+10);
           audio_prompt(AUDIO_PROMPT_OK);
+          ui_face_listening(false);
           {
             char vbuf[32];
             snprintf(vbuf, sizeof(vbuf), "%s %d%%", STR_VOLUME, (int)g_settings.volume);
@@ -411,6 +415,7 @@ void loop() {
           if (!awake) break;
           uiVolume(-10);
           audio_prompt(AUDIO_PROMPT_OK);
+          ui_face_listening(false);
           {
             char vbuf[32];
             snprintf(vbuf, sizeof(vbuf), "%s %d%%", STR_VOLUME, (int)g_settings.volume);
@@ -426,6 +431,7 @@ void loop() {
             g_awakeUntil = 0;
             g_awakeActive = false;
             audio_prompt(AUDIO_PROMPT_OK);
+            ui_face_listening(false);
             g_dialNumber = g_settings.dialNumber;
             g_dialAt = wnow + 450;   // let the confirmation chime finish first
           }
@@ -462,7 +468,9 @@ void loop() {
   // Closing the command window: a soft falling note asks for the wake word again.
   if (g_awakeActive && (int32_t)(now - g_awakeUntil) >= 0) {
     g_awakeActive = false;
+    ui_face_listening(false);       // command window closed: one tone, then back
     audio_prompt(AUDIO_PROMPT_TIMEOUT);
+    ui_face_set_expr(EX_LISTENING);
   }
 
   // call timer / meters (4x per second)

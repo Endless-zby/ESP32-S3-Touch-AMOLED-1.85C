@@ -210,9 +210,11 @@ struct ToneGen {
 
 // Short UI prompt tones: wake acknowledged / command accepted / window expired.
 struct PromptSeg { uint16_t freq; uint16_t ms; };
-static const PromptSeg kPromptWake[]    = {{880, 60}, {0, 40}, {1319, 110}};
-static const PromptSeg kPromptOk[]      = {{1397, 50}, {0, 20}, {1760, 70}};
-static const PromptSeg kPromptTimeout[] = {{988, 60}, {0, 30}, {740, 110}};
+// Two-note bell-like chimes: a sine plus a soft 2nd harmonic and an exponential
+// decay sound rounder/clearer than a plain gated sine.
+static const PromptSeg kPromptWake[]    = {{1046, 110}, {0, 25}, {1568, 190}};
+static const PromptSeg kPromptOk[]      = {{1318, 120}, {0, 20}, {1976, 90}};
+static const PromptSeg kPromptTimeout[] = {{880, 110}, {0, 25}, {659, 190}};
 
 static volatile uint8_t s_promptReq = AUDIO_PROMPT_NONE;
 static volatile bool s_promptBusy = false;
@@ -236,11 +238,12 @@ static bool prompt_render(int16_t *out) {
     const float w = 2.0f * (float)M_PI * seg.freq / AUDIO_HW_RATE;
     for (int i = 0; i < FRAME_16K; i++) {
       const uint32_t t = s_promptSegMs + (uint32_t)((uint32_t)i * 1000u / AUDIO_HW_RATE);
-      float env = 1.0f;                               // 4 ms fades keep the notes click-free
-      if (t < 4) env = t / 4.0f;
-      else if (t + 4 > segMs) env = (float)(segMs - t) / 4.0f;
-      if (env < 0) env = 0;
-      out[i] = (int16_t)(sinf(s_promptPhase) * 6500.0f * env);
+      // 5 ms attack plus an exponential decay: a bell, not a buzz.
+      float env = 1.0f;
+      if (t < 5) env = t / 5.0f;
+      else { float u = 1.f - (float)t / (float)segMs; if (u < 0.f) u = 0.f; env = u * u; }
+      const float v = sinf(s_promptPhase) + 0.30f * sinf(2.f * s_promptPhase);
+      out[i] = (int16_t)(v * 5200.0f * env);
       s_promptPhase += w;
       if (s_promptPhase > 2 * (float)M_PI) s_promptPhase -= 2 * (float)M_PI;
     }
