@@ -37,6 +37,9 @@ static lv_obj_t *scr_dialer, *dial_status_icon, *dial_status_text, *dial_number,
 static lv_obj_t *scr_call, *call_status, *call_party, *call_timer, *call_bar_mic, *call_bar_spk, *call_mute_btn, *call_mute_lbl, *call_volm_btn, *call_volp_btn, *call_hang_btn, *call_vol_lbl;
 static lv_obj_t *scr_in, *in_caller, *in_answer_btn, *in_reject_btn;
 static lv_obj_t *scr_set, *set_lines[4], *set_back_btn, *set_reset_btn, *set_vol_lbl, *set_vol_bar, *set_volm_btn, *set_volp_btn;
+static lv_obj_t *set_bri_lbl, *set_bri_bar, *set_brim_btn, *set_brip_btn, *set_dial_btn;
+static uint8_t s_brightness = 80;
+static uint32_t s_resetArmAt = 0;
 static lv_obj_t *toast_lbl = NULL;
 static lv_timer_t *toast_timer = NULL;
 static lv_timer_t *vol_timer = NULL;
@@ -354,6 +357,22 @@ static void back_event(lv_event_t *) { key_click(); ui_show_face(); }
 static void reset_event(lv_event_t *) { key_click(); if (s_cb.onResetWifi) s_cb.onResetWifi(); }
 
 static void set_volm_event(lv_event_t *) { key_click(); if (s_cb.onVolume) s_cb.onVolume(-10); }
+static void apply_brightness(int v) {
+  s_brightness = (uint8_t)constrain(v, 20, 100);
+  backlight_set(s_brightness);
+  lv_label_set_text_fmt(set_bri_lbl, LV_SYMBOL_EYE_OPEN " " "亮度 %d%%", s_brightness);
+  lv_bar_set_value(set_bri_bar, s_brightness, LV_ANIM_ON);
+}
+static void set_brim_event(lv_event_t *) { key_click(); apply_brightness(s_brightness - 10); }
+static void set_brip_event(lv_event_t *) { key_click(); apply_brightness(s_brightness + 10); }
+static void set_dial_event(lv_event_t *) { key_click(); ui_show_dialer(); }
+static void set_reset_event(lv_event_t *) {
+  key_click();
+  if (s_resetArmAt && millis() - s_resetArmAt < 4000) { s_resetArmAt = 0; if (s_cb.onResetWifi) s_cb.onResetWifi(); return; }
+  s_resetArmAt = millis();
+  lv_obj_set_style_bg_color(set_reset_btn, lv_color_hex(COL_RED), 0);
+  lv_label_set_text(lv_obj_get_child(set_reset_btn, 0), LV_SYMBOL_WIFI " 再点一次确认");
+}
 static void set_volp_event(lv_event_t *) { key_click(); if (s_cb.onVolume) s_cb.onVolume(+10); }
 
 static void update_settings_volume() {
@@ -384,8 +403,21 @@ static void build_settings() {
   lv_obj_set_style_radius(set_vol_bar, 5, LV_PART_INDICATOR);
   set_vol_lbl = mk_label(scr_set, "", &font_cn_18, COL_TEXT, LV_ALIGN_CENTER, 0, 44);
   update_settings_volume();
-  set_reset_btn = mk_pill_btn(scr_set, 170, 42, COL_ORANGE, LV_SYMBOL_WIFI " " STR_RESET_WIFI, &font_cn_18, 0, 82, reset_event);
-  set_back_btn = mk_pill_btn(scr_set, 126, 40, COL_KEY, LV_SYMBOL_LEFT " " STR_BACK, &font_cn_18, 0, 128, back_event);
+  // brightness row (centre y = -24)
+  set_brim_btn = mk_round_btn(scr_set, 40, COL_KEY, LV_SYMBOL_MINUS, &font_cn_18, -95, -24, set_brim_event);
+  set_brip_btn = mk_round_btn(scr_set, 40, COL_KEY, LV_SYMBOL_PLUS, &font_cn_18, 95, -24, set_brip_event);
+  set_bri_bar = lv_bar_create(scr_set);
+  lv_obj_set_size(set_bri_bar, 110, 10);
+  lv_obj_align(set_bri_bar, LV_ALIGN_CENTER, 0, -24);
+  lv_bar_set_range(set_bri_bar, 0, 100);
+  lv_obj_set_style_bg_color(set_bri_bar, lv_color_hex(COL_KEY), LV_PART_MAIN);
+  lv_obj_set_style_bg_color(set_bri_bar, lv_color_hex(COL_ORANGE), LV_PART_INDICATOR);
+  set_bri_lbl = mk_label(scr_set, "", &font_cn_18, COL_TEXT, LV_ALIGN_CENTER, 0, -52);
+  // dialpad lives here (the voice-first home has no keypad)
+  set_dial_btn = mk_pill_btn(scr_set, 170, 40, COL_ACCENT, LV_SYMBOL_CALL " 拨号盘", &font_cn_18, 0, 52, set_dial_event);
+  set_reset_btn = mk_pill_btn(scr_set, 170, 42, COL_ORANGE, LV_SYMBOL_WIFI " " STR_RESET_WIFI, &font_cn_18, 0, 96, set_reset_event);
+  set_back_btn = mk_pill_btn(scr_set, 126, 40, COL_KEY, LV_SYMBOL_LEFT " " STR_BACK, &font_cn_18, 0, 136, back_event);
+  apply_brightness(s_brightness);
 }
 
 

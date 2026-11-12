@@ -50,8 +50,8 @@ button.sec{background:#3a4152}button.warn{background:#b23b3b}
 </div>
 <div class="card"><h2>2. SIP 设置</h2>
 <label>服务器地址</label><input id="sserver">
-<div class="row"><div><label>端口</label><input id="sport" type="number"></div><div><label>拨打号码</label><input id="dial"></div></div>
-<label>本机用户名</label><input id="suser">
+<div class="row"><div><label>端口</label><input id="sport" type="number"></div><div><label>前台号码（DID）</label><input id="dial"></div></div>
+<label>本机号码（SIP 用户名）</label><input id="suser">
 <label>密码（仅注册时需要）</label><input id="spass" type="password">
 <label>显示名称</label><input id="dname">
 <label>注册到服务器</label><select id="sreg"><option value="0">否（直接呼叫）</option><option value="1">是</option></select>
