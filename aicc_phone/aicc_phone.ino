@@ -422,6 +422,32 @@ void loop() {
           }
           g_awakeUntil = wnow + kAwakeWindowMs;
           break;
+        case WAKE_CMD_BRI_UP:
+        case WAKE_CMD_BRI_UP2:
+          if (!awake) break;
+          ui_brightness_adjust(+10);
+          audio_prompt(AUDIO_PROMPT_OK);
+          ui_face_listening(false);
+          {
+            char bbuf[32];
+            snprintf(bbuf, sizeof(bbuf), "%s %d%%", STR_BRIGHTNESS, ui_brightness());
+            ui_toast(bbuf, 1000);
+          }
+          g_awakeUntil = wnow + kAwakeWindowMs;
+          break;
+        case WAKE_CMD_BRI_DOWN:
+        case WAKE_CMD_BRI_DOWN2:
+          if (!awake) break;
+          ui_brightness_adjust(-10);
+          audio_prompt(AUDIO_PROMPT_OK);
+          ui_face_listening(false);
+          {
+            char bbuf[32];
+            snprintf(bbuf, sizeof(bbuf), "%s %d%%", STR_BRIGHTNESS, ui_brightness());
+            ui_toast(bbuf, 1000);
+          }
+          g_awakeUntil = wnow + kAwakeWindowMs;
+          break;
         case WAKE_CMD_CALL_FRONT:
         case WAKE_CMD_CALL_FRONT2:
         case WAKE_CMD_CALL_FRONT3:

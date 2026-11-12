@@ -862,6 +862,20 @@ void ui_face_call_active(bool active) {
   else lv_obj_add_flag(face_hang, LV_OBJ_FLAG_HIDDEN);
 }
 
+int ui_brightness() { return s_brightness; }
+
+void ui_brightness_adjust(int delta) {
+  int v = (int)s_brightness + delta;
+  if (v < 20) v = 20;
+  if (v > 100) v = 100;
+  s_brightness = (uint8_t)v;
+  backlight_set(s_brightness);
+  if (g_bri_row.sl) {
+    if (lv_slider_get_value(g_bri_row.sl) != v) lv_slider_set_value(g_bri_row.sl, v, LV_ANIM_OFF);
+    row_paint(g_bri_row, v, 20, 100, true);
+  }
+}
+
 void ui_settings_back() {
   if (ui_screen() == UI_INFO) load(scr_set, UI_SETTINGS);
   else ui_show_face();

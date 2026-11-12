@@ -25,7 +25,9 @@ void ui_face_set_expr(int exprId);
 void ui_face_call_active(bool active);   // show the hang-up button; tapping the face hangs up
 void ui_face_levels(uint8_t mic, uint8_t spk);   // listening / speaking expressions
 void ui_face_listening(bool on);
-void ui_settings_back();   // info -> menu, menu -> face   // purple breathing ring: wake word heard, waiting for a command
+void ui_settings_back();
+void ui_brightness_adjust(int delta);
+int ui_brightness();   // voice command: step the backlight, clamped 20..100   // info -> menu, menu -> face   // purple breathing ring: wake word heard, waiting for a command
 
 void ui_show_boot(const char *status);
 void ui_boot_status(const char *status);

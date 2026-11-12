@@ -22,6 +22,10 @@
 #define WAKE_CMD_CALL_FRONT   6   // gei qian tai da dian hua     给前台打电话
 #define WAKE_CMD_CALL_FRONT2  7   // da dian hua gei qian tai     打电话给前台
 #define WAKE_CMD_CALL_FRONT3  8   // hu jiao qian tai             呼叫前台
+#define WAKE_CMD_BRI_UP       9   // ping mu liang yi dian        屏幕亮一点
+#define WAKE_CMD_BRI_DOWN    10   // ping mu an yi dian           屏幕暗一点
+#define WAKE_CMD_BRI_UP2     11   // liang yi dian                亮一点
+#define WAKE_CMD_BRI_DOWN2   12   // an yi dian                   暗一点
 
 namespace WakeWord {
 
