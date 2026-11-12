@@ -321,6 +321,7 @@ void setup() {
   g_audioOk = audio_init();
   audio_set_volume(g_settings.volume);
   audio_set_mic_gain(g_settings.micGain);
+  audio_set_aec_mode(g_settings.aecMode);
   audio_start_task(&g_rtp);
 
   g_sip.onCallState = onCallState;

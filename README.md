@@ -21,12 +21,16 @@ build/           编译产物（tools/build.sh 生成）
 - **通话**：呼出 / 来电接听 / 挂断 / 静音 / 音量调节，显示通话计时与收发音量电平。
 - **SIP**：直接 INVITE（FreeSWITCH 5080 外部口，免注册）或注册模式（5060，digest 认证）二选一；
   自动通过 OPTIONS 响应的 `received/rport` 学习公网地址以穿越 NAT；RTP 对称收发，服务器侧自动纠正媒体地址。
-- **音频**：ES8311 + ES7210 + NS4150B 功放，16 kHz 采样、软件重采样到 8 kHz；简单的半双工回声抑制。
+- **音频**：ES8311 + ES7210 + NS4150B 功放，16 kHz 采样、软件重采样到 8 kHz。
+- **回声消除**：使用乐鑫 esp-sr 的 AEC（`libs/ESP_SR_AEC`，预编译库）。V2 板的 ES7210 第 3 路麦克风输入在硬件上
+  接的是 ES8311 的线路输出（原理图 "AEC" 区块），ES7210 开 TDM 后立体声帧的右声道就是这路回声参考信号，
+  AEC 用它对消扬声器串回麦克风的声音，实现全双工免提通话。网页里可选"高性能 / 低功耗 / 关闭"。
 
 ## 编译环境
 
 机器上已经具备：Arduino IDE 2（自带 arduino-cli 1.5.1）、esp32 core 3.3.10、
-`~/Documents/Arduino/libraries/lvgl`（9.3.0）以及与之并列的 `lv_conf.h`（工程里有同一份副本）。
+`~/Documents/Arduino/libraries/lvgl`（9.3.0）以及与之并列的 `lv_conf.h`（工程里有同一份副本）、
+`~/Documents/Arduino/libraries/ESP_SR_AEC`（与仓库 `libs/ESP_SR_AEC` 相同）。
 
 ### 用脚本（推荐）
 
@@ -80,7 +84,8 @@ tools/monitor.sh        # 115200 串口日志
 | `sip.h/.cpp` | 精简 SIP UA：REGISTER/INVITE/ACK/CANCEL/BYE/OPTIONS、digest 认证、重传、来电处理 |
 | `rtp.h/.cpp` | RTP 收发 + 抖动缓冲 + 简单丢包隐藏 |
 | `g711.*` | μ-law / A-law 编解码 |
-| `audio.*` | ES8311/ES7210/I2S 初始化、音频任务（采集→RTP、RTP→播放、铃声/回铃音、按键音） |
+| `audio.*` | ES8311/ES7210/I2S 初始化、音频任务（采集→AEC→RTP、RTP→播放、铃声/回铃音、按键音） |
+| `libs/ESP_SR_AEC` | esp-sr 回声消除预编译库（Arduino 库形式，build.sh 用 `--library` 引入） |
 | `ui.*` / `ui_strings.h` | LVGL 界面（所有控件都在圆形范围内）；中文字符串集中在 `ui_strings.h` |
 | `font_cn_18.c` / `font_cn_24.c` | 自动生成的中文字体（思源黑体子集 + ASCII + LVGL 图标） |
 | `web_portal.*` | 热点 + DNS 劫持 + 配网/设置网页 |
@@ -94,8 +99,8 @@ tools/monitor.sh        # 115200 串口日志
 
 ## 已知限制 / 后续可做
 
-- 回声消除只是简单的半双工抑制（扬声器放音时压低麦克风），免提大音量下 AI 侧可能听到回声；
-  可以把音量调低或后续接入 ESP-SR 的 AEC。
+- AEC 的 CPU 开销尚未在真机测量：串口每 5 秒打印一行 `[AEC] avg ... us / chunk`，若平均值接近
+  chunk 时长（chunk=256 时为 16 ms）就在网页里切到"低功耗"模式。AEC 关闭时退回半双工抑制。
 - 未实现 DTMF（RFC 2833）发送、保持、转接。
 - V1 板（PCM5101 + 数字麦）代码路径保留但未测试（`config.h` 里 `BOARD_V2 0`）。
 - 仅 UDP 传输，不支持 TLS/SRTP。

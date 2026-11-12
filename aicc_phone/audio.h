@@ -16,6 +16,8 @@ void audio_set_mode(AudioMode m);
 AudioMode audio_mode();
 void audio_set_volume(uint8_t percent);   // 0..100 (speaker)
 void audio_set_mic_gain(uint8_t percent); // 0..200
+void audio_set_aec_mode(uint8_t mode);    // 0 off, 1 low cost, 2 high performance (V2 only)
+uint8_t audio_aec_mode();
 void audio_set_mute(bool mute);
 bool audio_is_muted();
 void audio_click();                       // short key click

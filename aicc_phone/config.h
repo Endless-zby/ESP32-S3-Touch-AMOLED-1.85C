@@ -71,6 +71,7 @@
 #define DEF_SIP_REGISTER 0
 #define DEF_VOLUME       75
 #define DEF_MIC_GAIN     100
+#define DEF_AEC_MODE     2       // 0 off, 1 esp-sr VOIP low cost, 2 esp-sr VOIP high performance
 #define SIP_LOCAL_PORT   5060
 #define RTP_LOCAL_PORT   20000
 

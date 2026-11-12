@@ -19,7 +19,9 @@ void Settings::load() {
   sipRegister = p.getBool("sreg", DEF_SIP_REGISTER);
   volume = p.getUChar("vol", DEF_VOLUME);
   micGain = p.getUChar("mic", DEF_MIC_GAIN);
+  aecMode = p.getUChar("aec", DEF_AEC_MODE);
   p.end();
+  if (aecMode > 2) aecMode = 2;
   if (sipServer.length() == 0) sipServer = DEF_SIP_SERVER;
   if (sipPort == 0) sipPort = DEF_SIP_PORT;
   if (sipUser.length() == 0) sipUser = DEF_SIP_USER;
@@ -40,6 +42,7 @@ void Settings::save() {
   p.putBool("sreg", sipRegister);
   p.putUChar("vol", volume);
   p.putUChar("mic", micGain);
+  p.putUChar("aec", aecMode);
   p.end();
 }
 

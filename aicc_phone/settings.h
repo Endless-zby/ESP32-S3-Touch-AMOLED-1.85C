@@ -13,6 +13,7 @@ struct Settings {
   bool sipRegister;
   uint8_t volume;      // 0..100
   uint8_t micGain;     // 0..200 (%)
+  uint8_t aecMode;     // 0 off, 1 low cost, 2 high performance
 
   void load();
   void save();
