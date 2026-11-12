@@ -12,6 +12,17 @@
 //
 // Phase 1 only reports detections over the serial console; the UI/command
 // dispatch is layered on top later.
+// Command ids come from the model pack's fst/commands_cn.txt, one line per
+// phrase. Keep this list and tools/srmodels/srmodels_cn.bin in sync.
+#define WAKE_CMD_WAKE         1   // xiao xi xiao xi        小西小西
+#define WAKE_CMD_VOL_UP       2   // sheng yin da dian      声音大点
+#define WAKE_CMD_VOL_DOWN     3   // sheng yin xiao dian    声音小点
+#define WAKE_CMD_VOL_UP2      4   // da dian sheng          大点声
+#define WAKE_CMD_VOL_DOWN2    5   // xiao dian sheng        小点声
+#define WAKE_CMD_CALL_FRONT   6   // gei qian tai da dian hua     给前台打电话
+#define WAKE_CMD_CALL_FRONT2  7   // da dian hua gei qian tai     打电话给前台
+#define WAKE_CMD_CALL_FRONT3  8   // hu jiao qian tai             呼叫前台
+
 namespace WakeWord {
 
 struct Stats {

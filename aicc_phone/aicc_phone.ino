@@ -20,6 +20,11 @@
 static SipClient g_sip;
 static RtpSession g_rtp;
 
+// Voice commands: the wake word opens a short window in which volume / call
+// commands are accepted, so random table talk does not dial the front desk.
+static uint32_t g_awakeUntil = 0;
+static const uint32_t kAwakeWindowMs = 6000;
+
 enum NetState { NET_IDLE, NET_CONNECTING, NET_CONNECTED, NET_SETUP };
 static NetState g_net = NET_IDLE;
 static uint32_t g_netSince = 0;
@@ -359,14 +364,46 @@ void loop() {
   if (g_sipStarted) g_sip.loop();
   netLoop();
 
-  // Wake word events (Phase 1: log + a short click; command dispatch comes later)
+  // Voice commands: wake word first, then volume / call commands inside the window.
   {
     int wcmd = -1;
     float wprob = 0;
     char wphrase[48];
     if (WakeWord::consume(wcmd, wprob, wphrase, sizeof(wphrase))) {
       Serial.printf("[WAKE] event cmd=%d \"%s\" prob=%.2f\n", wcmd, wphrase, (double)wprob);
-      audio_click();
+      const uint32_t wnow = millis();
+      const bool awake = (int32_t)(wnow - g_awakeUntil) < 0;
+      switch (wcmd) {
+        case WAKE_CMD_WAKE:
+          g_awakeUntil = wnow + kAwakeWindowMs;
+          audio_click();
+          break;
+        case WAKE_CMD_VOL_UP:
+        case WAKE_CMD_VOL_UP2:
+          if (!awake) break;
+          uiVolume(+10);
+          audio_click();
+          g_awakeUntil = wnow + kAwakeWindowMs;
+          break;
+        case WAKE_CMD_VOL_DOWN:
+        case WAKE_CMD_VOL_DOWN2:
+          if (!awake) break;
+          uiVolume(-10);
+          audio_click();
+          g_awakeUntil = wnow + kAwakeWindowMs;
+          break;
+        case WAKE_CMD_CALL_FRONT:
+        case WAKE_CMD_CALL_FRONT2:
+        case WAKE_CMD_CALL_FRONT3:
+          if (!awake) break;
+          if (g_sip.isIdle()) {
+            g_awakeUntil = 0;
+            uiDial(g_settings.dialNumber.c_str());
+          }
+          break;
+        default:
+          break;
+      }
     }
   }
 
