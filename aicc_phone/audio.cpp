@@ -5,6 +5,7 @@
 #include <math.h>
 #include <string.h>
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
 
 #if BOARD_V2
 #include "es8311.h"
@@ -312,6 +313,9 @@ static Aec s_aec;
 #ifndef AEC_SELFTEST
 #define AEC_SELFTEST 0
 #endif
+#ifndef AEC_LAG_ESTIMATOR
+#define AEC_LAG_ESTIMATOR 0
+#endif
 #if AEC_SELFTEST
 // Boot-time self test with synthetic signals: tells us how aec_process()
 // interprets its buffers on this library build.
@@ -482,6 +486,9 @@ static void audio_task(void *) {
   uint8_t wSlot[4] = {0, 0, 0, 0}, wMic = 0, wOut = 0, wRef = 0, wSpk = 0;
   uint16_t wFrames = 0, wFarActive = 0, wNearOut = 0;   // frames with speaker active / with AEC output > 5%
   uint32_t farHold = 0;      // ms since the far end was last active (counts down)
+  uint32_t wMaxUs = 0;       // longest frame processing time in the window
+  uint16_t wLate = 0;        // frames that took longer than 20 ms
+  int64_t frameT0 = 0;
   uint16_t resFrames = 0;    // frames attenuated by the residual suppressor in this window
 
   for (;;) {
@@ -525,15 +532,19 @@ static void audio_task(void *) {
 
     // ---- capture (paces the loop) ----
     if (!read_mic(mic16, ref16)) vTaskDelay(pdMS_TO_TICKS(FRAME_MS));  // keep pacing even without a mic
+#if BOARD_V2
+    frameT0 = esp_timer_get_time();
+#endif
 
     if (m == AUDIO_CALL && s_rtp) {
       // ---- uplink ----
       const int16_t *src = mic16;
       bool aecUsed = false;
 #if BOARD_V2
-      // raw microphone at 8 kHz for the lag estimator
+#if AEC_LAG_ESTIMATOR
       downsample(mic16, rawmic8, dsHistRaw);
       hist_push(s_micHist8, MIC_HIST_8K, s_micPos8, rawmic8, FRAME_8K);
+#endif
       if (s_refSlot == 4) {
         // software reference: what we played s_refDelayMs ago
         hist_fetch(s_playHist16, PLAY_HIST_16K, s_playPos16, (int)s_refDelayMs * AUDIO_HW_RATE / 1000, ref16, FRAME_16K);
@@ -601,7 +612,8 @@ static void audio_task(void *) {
       }
       if (clickFrames > 0) { tone.fill(spk16, 1200, 0, 1000, 0, 5000); clickFrames--; }
 #if BOARD_V2
-      hist_push(s_playHist16, PLAY_HIST_16K, s_playPos16, spk16, FRAME_16K);
+      if (s_refSlot == 4) hist_push(s_playHist16, PLAY_HIST_16K, s_playPos16, spk16, FRAME_16K);
+#if AEC_LAG_ESTIMATOR
       {
         static int16_t h8 = 0;
         static int16_t p8[FRAME_8K];
@@ -609,30 +621,43 @@ static void audio_task(void *) {
         hist_push(s_playHist8, PLAY_HIST_8K, s_playPos8, p8, FRAME_8K);
       }
 #endif
+#endif
       write_stereo(spk16);
 
 #if BOARD_V2
       uint32_t now = millis();
+#if AEC_LAG_ESTIMATOR
+      // Expensive (software double precision): only for bring-up of the software reference.
       if (now - lastLag > 3000) {
         lastLag = now;
-        // only meaningful while the far end is talking
         if (s_spkLevel > 5) lagMs = estimate_echo_lag(&lagCorr); else { lagMs = -1; lagCorr = 0; }
+      }
+#else
+      (void)lastLag;
+#endif
+      {
+        uint32_t dt = (uint32_t)(esp_timer_get_time() - frameT0);
+        if (dt > wMaxUs) wMaxUs = dt;
+        if (dt > 20000) wLate++;
       }
       if (now - lastStat > 2000) {
         lastStat = now;
         if (s_aec.active() && s_aec.procCount) {
-          Serial.printf("[AEC] %lu/%lu us  peak2s slots=[%u %u %u %u] mic(s%u)=%u out=%u ref=%u spk=%u  far=%u%% out>5=%u%% res=%u%% lag=%dms corr=%.2f\n",
+          Serial.printf("[AEC] %lu/%lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% out>5=%u%% res=%u%% | rtp rx=%lu gaps=%lu under=%lu drop=%lu depth=%d\n",
                         (unsigned long)(s_aec.procUs / s_aec.procCount), (unsigned long)s_aec.procMaxUs,
-                        wSlot[0], wSlot[1], wSlot[2], wSlot[3], s_micSlot, wMic, wOut, wRef, wSpk,
+                        (unsigned long)wMaxUs, wLate, wMic, wOut, wRef, wSpk,
                         wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? wNearOut * 100 / wFrames : 0,
-                        wFrames ? resFrames * 100 / wFrames : 0, lagMs, lagCorr);
+                        wFrames ? resFrames * 100 / wFrames : 0,
+                        (unsigned long)s_rtp->statRx(), (unsigned long)s_rtp->statSeqGaps(), (unsigned long)s_rtp->statUnderruns(),
+                        (unsigned long)s_rtp->statDrops(), s_rtp->jbDepth());
+          s_rtp->statsReset();
           s_aec.procUs = 0; s_aec.procCount = 0; s_aec.procMaxUs = 0;
         } else {
           Serial.printf("[AUDIO] peak2s slots=[%u %u %u %u] mic(s%u)=%u out=%u ref=%u spk=%u far=%u%% out>5=%u%% lag=%dms corr=%.2f (aec off)\n",
                         wSlot[0], wSlot[1], wSlot[2], wSlot[3], s_micSlot, wMic, wOut, wRef, wSpk,
                         wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? wNearOut * 100 / wFrames : 0, lagMs, lagCorr);
         }
-        memset(wSlot, 0, sizeof(wSlot)); wMic = wOut = wRef = wSpk = 0; wFrames = wFarActive = wNearOut = 0; resFrames = 0;
+        memset(wSlot, 0, sizeof(wSlot)); wMic = wOut = wRef = wSpk = 0; wFrames = wFarActive = wNearOut = 0; resFrames = 0; wMaxUs = 0; wLate = 0;
       }
 #endif
       continue;

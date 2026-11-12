@@ -27,6 +27,13 @@ class RtpSession {
   uint32_t lastRxMs() const { return _lastRxMs; }
   uint32_t rxPackets() const { return _rxPackets; }
   uint32_t txPackets() const { return _txPackets; }
+  // diagnostics (reset by statsReset)
+  uint32_t statUnderruns() const { return _underruns; }
+  uint32_t statDrops() const { return _drops; }
+  uint32_t statRx() const { return _rxWindow; }
+  uint32_t statSeqGaps() const { return _seqGaps; }
+  int jbDepth() const { return _jbCount; }
+  void statsReset() { _underruns = _drops = _rxWindow = _seqGaps = 0; }
 
  private:
   NetworkUDP _udp;
@@ -43,9 +50,13 @@ class RtpSession {
   uint32_t _lastRxMs = 0;
   uint32_t _rxPackets = 0, _txPackets = 0;
 
-  // jitter buffer: ring of raw G.711 frames
-  static const int JB_SLOTS = 10;
-  static const int JB_PREFILL = 2;
+  // jitter buffer: ring of raw G.711 frames (20 ms each)
+  static const int JB_SLOTS = 20;      // 400 ms capacity
+  static const int JB_PREFILL = 4;     // start playing after 80 ms
+  static const int JB_MAX = 14;        // drop oldest beyond 280 ms
+  uint32_t _underruns = 0, _drops = 0, _rxWindow = 0, _seqGaps = 0;
+  uint16_t _lastSeq = 0;
+  bool _haveSeq = false;
   struct Slot { uint8_t data[FRAME_8K]; uint8_t pt; bool used; };
   Slot _jb[JB_SLOTS];
   int _jbHead = 0, _jbTail = 0, _jbCount = 0;

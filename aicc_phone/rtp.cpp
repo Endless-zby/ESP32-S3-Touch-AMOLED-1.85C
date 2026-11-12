@@ -32,6 +32,8 @@ void RtpSession::setRemote(IPAddress ip, uint16_t port, uint8_t pt, int dtmfPt) 
   _haveLast = false;
   _rxPackets = _txPackets = 0;
   _lastRxMs = 0;
+  _haveSeq = false;
+  statsReset();
 }
 
 void RtpSession::clearRemote() {
@@ -89,6 +91,11 @@ void RtpSession::pump() {
     }
     _lastRxMs = millis();
     _rxPackets++;
+    _rxWindow++;
+    uint16_t seq = (buf[2] << 8) | buf[3];
+    if (_haveSeq && (uint16_t)(seq - _lastSeq) != 1) _seqGaps++;
+    _lastSeq = seq;
+    _haveSeq = true;
     // Symmetric RTP: latch onto the first source we hear from (NAT traversal).
     if (!_latched) {
       _remoteIp = _udp.remoteIP();
@@ -112,9 +119,10 @@ void RtpSession::pump() {
 }
 
 void RtpSession::jbPush(const uint8_t *data, uint8_t pt) {
-  if (_jbCount >= JB_SLOTS - 2) {  // too much buffered: drop oldest to bound latency
+  if (_jbCount >= JB_MAX) {  // too much buffered: drop oldest to bound latency
     _jbHead = (_jbHead + 1) % JB_SLOTS;
     _jbCount--;
+    _drops++;
   }
   memcpy(_jb[_jbTail].data, data, FRAME_8K);
   _jb[_jbTail].pt = pt;
@@ -148,6 +156,7 @@ bool RtpSession::popFrame(int16_t *pcm) {
   }
   // underrun: simple packet loss concealment (repeat last frame, fading out)
   _playing = false;
+  _underruns++;
   if (_haveLast && _plcCount < 3) {
     g711_decode(_lastFrame, pcm, FRAME_8K, _lastPt == 8);
     int gain = 3 - _plcCount;  // 3/4, 2/4, 1/4
