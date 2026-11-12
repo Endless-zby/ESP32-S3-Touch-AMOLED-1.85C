@@ -51,7 +51,7 @@ static FaceModel s_face;
 static FaceRenderer s_faceR;
 static uint16_t *s_faceBuf = NULL;
 static lv_image_dsc_t s_faceDsc;
-static lv_obj_t *scr_face, *face_canvas, *face_clock, *face_batt, *face_batt_fill, *face_batt_pct, *face_ring, *face_hang;
+static lv_obj_t *scr_face, *face_canvas, *face_clock, *face_batt, *face_batt_fill, *face_batt_pct, *face_hang;
 static lv_timer_t *face_timer = NULL;
 static bool s_faceCall = false;
 static uint32_t s_battAt = 0;
@@ -62,6 +62,7 @@ static int s_battPct = -1;
 // the eyes - same behaviour as the reference PetEyes/HotelPet sketches.
 static bool s_faceTouch = false, s_faceLong = false, s_gazeActive = false;
 static bool s_listenRing = false;
+static bool s_ringDrawn = false;
 static int16_t s_faceStartX = 0, s_faceStartY = 0;
 static uint32_t s_gazeAt = 0;
 
@@ -484,12 +485,20 @@ static void face_timer_cb(lv_timer_t *) {
     s_gazeActive = false;
     s_face.setGazeOverride(false, 0, 0);   // back to the idle gaze wander
   }
-  if (s_listenRing && face_ring) {
-    const float ph = (float)(now % 1600) * (2.f * (float)M_PI / 1600.f);   // 1.6 s breath
-    const float b = 0.5f + 0.5f * sinf(ph);
-    lv_obj_set_style_border_opa(face_ring, (lv_opa_t)(40.f + 170.f * b), 0);
-    lv_obj_set_style_shadow_opa(face_ring, (lv_opa_t)(20.f + 130.f * b), 0);
-    lv_obj_invalidate(face_ring);
+  if (s_listenRing) {
+    static uint32_t lastRing = 0;
+    if (now - lastRing >= 60) {                      // ~16 fps is plenty for a breath
+      lastRing = now;
+      const float ph = (float)(now % 1600) * (2.f * (float)M_PI / 1600.f);   // 1.6 s breath
+      const float b = 0.5f + 0.5f * sinf(ph);
+      s_faceR.ringDraw((uint8_t)(50.f + 205.f * b));
+      lv_obj_invalidate(face_canvas);
+      s_ringDrawn = true;
+    }
+  } else if (s_ringDrawn) {
+    s_ringDrawn = false;
+    s_faceR.ringDraw(0);                             // clear the band
+    lv_obj_invalidate(face_canvas);
   }
   if (now - lastClock >= 1000) { lastClock = now; face_clock_update(); }
   if (now - s_battAt > 5000) { s_battAt = now; face_battery_update(false); }
@@ -506,6 +515,7 @@ static void build_face() {
   }
   memset(s_faceBuf, 0, bytes);
   if (!s_faceR.begin(s_faceBuf, LCD_W, LCD_H)) Serial.println("[UI] face renderer init failed");
+  if (!s_faceR.beginRing()) Serial.println("[UI] face ring init failed");
   memset(&s_faceDsc, 0, sizeof(s_faceDsc));
   s_faceDsc.header.magic = LV_IMAGE_HEADER_MAGIC;
   s_faceDsc.header.cf = LV_COLOR_FORMAT_RGB565;
@@ -545,22 +555,6 @@ static void build_face() {
   lv_obj_set_style_text_font(face_batt_pct, &font_cn_18, 0);
   lv_obj_set_style_text_color(face_batt_pct, lv_color_hex(COL_TEXT), 0);
   lv_obj_align(face_batt_pct, LV_ALIGN_CENTER, 0, 0);
-
-  // purple breathing ring around the rim while the wake word waits for a command
-  face_ring = lv_obj_create(scr_face);
-  lv_obj_set_size(face_ring, LCD_W - 64, LCD_H - 64);   // ~148 px radius: well inside the round glass
-  lv_obj_center(face_ring);
-  lv_obj_set_style_bg_opa(face_ring, LV_OPA_TRANSP, 0);
-  lv_obj_set_style_border_width(face_ring, 8, 0);
-  lv_obj_set_style_border_color(face_ring, lv_color_hex(0x8B5CF6), 0);
-  lv_obj_set_style_border_opa(face_ring, LV_OPA_TRANSP, 0);
-  lv_obj_set_style_shadow_color(face_ring, lv_color_hex(0x8B5CF6), 0);
-  lv_obj_set_style_shadow_width(face_ring, 28, 0);
-  lv_obj_set_style_shadow_spread(face_ring, 2, 0);
-  lv_obj_set_style_shadow_opa(face_ring, LV_OPA_TRANSP, 0);
-  lv_obj_set_style_radius(face_ring, LV_RADIUS_CIRCLE, 0);
-  lv_obj_clear_flag(face_ring, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_clear_flag(face_ring, LV_OBJ_FLAG_SCROLLABLE);
 
   face_hang = mk_round_btn(scr_face, 64, COL_RED, LV_SYMBOL_CALL, &font_cn_24, 0, 118, face_hang_event);
   lv_obj_add_flag(face_hang, LV_OBJ_FLAG_HIDDEN);
@@ -715,10 +709,6 @@ void ui_face_call_active(bool active) {
 void ui_face_listening(bool on) {
   s_listenRing = on;
   Serial.printf("[UI] listening ring %s\n", on ? "on" : "off");
-  if (face_ring) {
-    lv_obj_set_style_border_opa(face_ring, on ? LV_OPA_60 : LV_OPA_TRANSP, 0);
-    lv_obj_set_style_shadow_opa(face_ring, on ? LV_OPA_40 : LV_OPA_TRANSP, 0);
-  }
 }
 
 void ui_face_levels(uint8_t mic, uint8_t spk) {

@@ -1,6 +1,7 @@
 #include "face_render.h"
 #include <math.h>
 #include <string.h>
+#include <esp_heap_caps.h>
 
 #define AI __attribute__((always_inline)) static inline
 
@@ -61,6 +62,45 @@ bool FaceRenderer::begin(uint16_t *buf, int w, int h) {
 
 void FaceRenderer::resetDirty() {
   for (int i = 0; i < FACE_SHAPE_COUNT; i++) _prev[i] = {0, 0, 0, 0};
+}
+
+bool FaceRenderer::beginRing() {
+  if (!_buf) return false;
+  _ringMask = (uint8_t *)heap_caps_malloc((size_t)_w * _h, MALLOC_CAP_SPIRAM);
+  if (!_ringMask) return false;
+  const float cx = _w * 0.5f, cy = _h * 0.5f;
+  const float outer = _w * 0.5f - 1.0f;               // hug the glass edge
+  const float width = _w * (2.0f / 46.99f);           // 2 mm on a 1.85" panel
+  const float inner = outer - width;
+  uint8_t *m = _ringMask;
+  for (int y = 0; y < _h; y++) {
+    for (int x = 0; x < _w; x++, m++) {
+      const float dx = (x + 0.5f) - cx, dy = (y + 0.5f) - cy;
+      const float r = sqrtf(dx * dx + dy * dy);
+      float a = (r - inner) / width;
+      if (a <= 0.f) { *m = 0; continue; }
+      if (a > 1.f) a = 1.f;
+      *m = (uint8_t)(255.f * a * a * (3.f - 2.f * a));
+    }
+  }
+  for (int i = 0; i < 256; i++) {
+    const float v = i / 255.f;
+    const uint8_t r = (uint8_t)(139.f * v), g = (uint8_t)(92.f * v), b = (uint8_t)(246.f * v);
+    _ringLut[i] = (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+  }
+  return true;
+}
+
+void FaceRenderer::ringDraw(uint8_t level) {
+  if (!_ringMask || !_buf) return;
+  const uint8_t *m = _ringMask;
+  uint16_t *p = _buf;
+  const int n = _w * _h;
+  for (int i = 0; i < n; i++, m++, p++) {
+    const uint8_t a = *m;
+    if (!a) continue;
+    *p = _ringLut[(uint16_t)((uint16_t)a * level / 255u)];
+  }
 }
 
 void FaceRenderer::clearAll() {
