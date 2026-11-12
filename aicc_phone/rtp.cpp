@@ -44,7 +44,7 @@ void RtpSession::clearRemote() {
 }
 
 void RtpSession::sendFrame(const int16_t *pcm) {
-  if (!_remotePort) return;
+  if (!_remotePort) { _txFail++; return; }   // no media address yet
   uint8_t pkt[12 + FRAME_8K];
   pkt[0] = 0x80;
   pkt[1] = _pt & 0x7F;
@@ -58,6 +58,9 @@ void RtpSession::sendFrame(const int16_t *pcm) {
     _udp.write(pkt, sizeof(pkt));
     _udp.endPacket();
     _txPackets++;
+    _txWindow++;
+  } else {
+    _txFail++;   // socket/write side refused the packet
   }
 }
 

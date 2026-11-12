@@ -364,20 +364,20 @@ static void aec_selftest() {
 // Audio task: paced by the I2S DMA (20 ms per iteration)
 // ---------------------------------------------------------------------------
 #if BOARD_V2
-static void write_stereo(const int16_t *mono16) {
+static bool write_stereo(const int16_t *mono16) {
   static int32_t st[FRAME_16K * 2];
   for (int i = 0; i < FRAME_16K; i++) {
     int32_t v = ((int32_t)mono16[i]) << 16;
     st[2 * i] = v;
     st[2 * i + 1] = v;
   }
-  s_i2s.write((uint8_t *)st, sizeof(st));
+  return s_i2s.write((uint8_t *)st, sizeof(st)) == (int)sizeof(st);
 }
 #else
-static void write_stereo(const int16_t *mono16) {
+static bool write_stereo(const int16_t *mono16) {
   static int16_t st[FRAME_16K * 2];
   for (int i = 0; i < FRAME_16K; i++) { st[2 * i] = mono16[i]; st[2 * i + 1] = mono16[i]; }
-  s_i2s.write((uint8_t *)st, sizeof(st));
+  return s_i2s.write((uint8_t *)st, sizeof(st)) == (int)sizeof(st);
 }
 #endif
 
@@ -490,6 +490,9 @@ static void audio_task(void *) {
   uint16_t wLate = 0;        // frames that took longer than 20 ms
   int64_t frameT0 = 0;
   uint16_t resFrames = 0;    // frames attenuated by the residual suppressor in this window
+  uint16_t micFails = 0;     // short I2S captures in this window
+  uint16_t wrFails = 0;      // short I2S writes in this window
+  uint8_t micFailStreak = 0; // consecutive short captures, for a one-shot warning
 
   for (;;) {
     AudioMode m = s_mode;
@@ -531,7 +534,18 @@ static void audio_task(void *) {
     }
 
     // ---- capture (paces the loop) ----
-    if (!read_mic(mic16, ref16)) vTaskDelay(pdMS_TO_TICKS(FRAME_MS));  // keep pacing even without a mic
+    if (read_mic(mic16, ref16)) {
+      if (micFailStreak) {
+        Serial.printf("[AUDIO] mic capture recovered after %u short reads\n", (unsigned)micFailStreak);
+        micFailStreak = 0;
+      }
+    } else {
+      // A short I2S read means the ADC stopped delivering: count it and say so
+      // once when it starts, so a dead capture path is visible in the log.
+      micFails++;
+      if (++micFailStreak == 5) Serial.println("[AUDIO] mic capture FAILING (I2S short read)");
+      vTaskDelay(pdMS_TO_TICKS(FRAME_MS));  // keep pacing even without a mic
+    }
 #if BOARD_V2
     frameT0 = esp_timer_get_time();
 #endif
@@ -622,7 +636,7 @@ static void audio_task(void *) {
       }
 #endif
 #endif
-      write_stereo(spk16);
+      if (!write_stereo(spk16)) wrFails++;
 
 #if BOARD_V2
       uint32_t now = millis();
@@ -643,21 +657,25 @@ static void audio_task(void *) {
       if (now - lastStat > 2000) {
         lastStat = now;
         if (s_aec.active() && s_aec.procCount) {
-          Serial.printf("[AEC] %lu/%lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% out>5=%u%% res=%u%% | rtp rx=%lu gaps=%lu under=%lu drop=%lu depth=%d\n",
+          Serial.printf("[AEC] %lu/%lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% out>5=%u%% res=%u%% micfail=%u wrfail=%u | rtp rx=%lu tx=%lu txfail=%lu gaps=%lu under=%lu drop=%lu depth=%d\n",
                         (unsigned long)(s_aec.procUs / s_aec.procCount), (unsigned long)s_aec.procMaxUs,
                         (unsigned long)wMaxUs, wLate, wMic, wOut, wRef, wSpk,
                         wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? wNearOut * 100 / wFrames : 0,
-                        wFrames ? resFrames * 100 / wFrames : 0,
-                        (unsigned long)s_rtp->statRx(), (unsigned long)s_rtp->statSeqGaps(), (unsigned long)s_rtp->statUnderruns(),
+                        wFrames ? resFrames * 100 / wFrames : 0, (unsigned)micFails, (unsigned)wrFails,
+                        (unsigned long)s_rtp->statRx(), (unsigned long)s_rtp->statTx(), (unsigned long)s_rtp->statTxFail(),
+                        (unsigned long)s_rtp->statSeqGaps(), (unsigned long)s_rtp->statUnderruns(),
                         (unsigned long)s_rtp->statDrops(), s_rtp->jbDepth());
           s_rtp->statsReset();
           s_aec.procUs = 0; s_aec.procCount = 0; s_aec.procMaxUs = 0;
         } else {
-          Serial.printf("[AUDIO] peak2s slots=[%u %u %u %u] mic(s%u)=%u out=%u ref=%u spk=%u far=%u%% out>5=%u%% lag=%dms corr=%.2f (aec off)\n",
+          Serial.printf("[AUDIO] peak2s slots=[%u %u %u %u] mic(s%u)=%u out=%u ref=%u spk=%u far=%u%% out>5=%u%% lag=%dms corr=%.2f micfail=%u rtp tx=%lu txfail=%lu (aec off)\n",
                         wSlot[0], wSlot[1], wSlot[2], wSlot[3], s_micSlot, wMic, wOut, wRef, wSpk,
-                        wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? wNearOut * 100 / wFrames : 0, lagMs, lagCorr);
+                        wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? wNearOut * 100 / wFrames : 0, lagMs, lagCorr,
+                        (unsigned)micFails, (unsigned long)s_rtp->statTx(), (unsigned long)s_rtp->statTxFail());
+          s_rtp->statsReset();
         }
         memset(wSlot, 0, sizeof(wSlot)); wMic = wOut = wRef = wSpk = 0; wFrames = wFarActive = wNearOut = 0; resFrames = 0; wMaxUs = 0; wLate = 0;
+        micFails = 0; wrFails = 0;
       }
 #endif
       continue;

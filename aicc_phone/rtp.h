@@ -32,8 +32,10 @@ class RtpSession {
   uint32_t statDrops() const { return _drops; }
   uint32_t statRx() const { return _rxWindow; }
   uint32_t statSeqGaps() const { return _seqGaps; }
+  uint32_t statTx() const { return _txWindow; }
+  uint32_t statTxFail() const { return _txFail; }
   int jbDepth() const { return _jbCount; }
-  void statsReset() { _underruns = _drops = _rxWindow = _seqGaps = 0; }
+  void statsReset() { _underruns = _drops = _rxWindow = _seqGaps = _txWindow = _txFail = 0; }
 
  private:
   NetworkUDP _udp;
@@ -55,6 +57,7 @@ class RtpSession {
   static const int JB_PREFILL = 4;     // start playing after 80 ms
   static const int JB_MAX = 14;        // drop oldest beyond 280 ms
   uint32_t _underruns = 0, _drops = 0, _rxWindow = 0, _seqGaps = 0;
+  uint32_t _txWindow = 0, _txFail = 0;   // window counters: frames accepted / not sent
   uint16_t _lastSeq = 0;
   bool _haveSeq = false;
   struct Slot { uint8_t data[FRAME_8K]; uint8_t pt; bool used; };

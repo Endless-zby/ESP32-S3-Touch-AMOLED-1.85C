@@ -385,8 +385,10 @@ void loop() {
   // media watchdog: no RTP for 15 s during a connected call -> hang up
   if (g_sip.callState() == SIP_CALL_CONNECTED && now - g_lastRtpCheck > 1000) {
     g_lastRtpCheck = now;
+    // lastRxMs is written by the audio task on the other core and can be a
+    // millisecond ahead of this loop's `now`; age it with a signed delta.
     uint32_t last = g_rtp.lastRxMs();
-    uint32_t since = last ? now - last : now - g_callConnectedAt;
+    int32_t since = (int32_t)(now - (last ? last : g_callConnectedAt));
     if (since > 15000) {
       Serial.println("[APP] RTP timeout -> hangup");
       g_sip.hangup();

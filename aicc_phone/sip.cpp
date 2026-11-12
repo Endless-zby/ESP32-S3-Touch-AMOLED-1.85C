@@ -392,7 +392,10 @@ void SipClient::startTxn(Txn &t, const String &method, const String &msg, IPAddr
 
 void SipClient::serviceTxn(Txn &t, uint32_t now) {
   if (!t.active) return;
-  if (now - t.startedAt > t.maxLife) {
+  // Signed comparison: a transaction can be started after this loop's `now` was
+  // sampled, and an unsigned subtraction would wrap into a huge age (which made
+  // every answered re-INVITE look like a timed-out 200 -> BYE).
+  if ((int32_t)(now - t.startedAt) > (int32_t)t.maxLife) {
     t.active = false;
     Serial.printf("[SIP] %s transaction timeout\n", t.method.c_str());
     if (&t == &_txInvite) {
@@ -408,7 +411,7 @@ void SipClient::serviceTxn(Txn &t, uint32_t now) {
     }
     return;
   }
-  if (now - t.sentAt >= t.interval) {
+  if ((int32_t)(now - t.sentAt) >= (int32_t)t.interval) {
     t.sentAt = now;
     if (t.interval < 4000) t.interval *= 2;
     sendRaw(t.msg, t.ip, t.port);
@@ -673,15 +676,20 @@ void SipClient::loop() {
     handlePacket(_rx, n, _udp.remoteIP(), _udp.remotePort());
   }
 
+  // A transaction may have started while those packets were parsed (a re-INVITE
+  // answered above starts _tx200), so its `startedAt` can be later than the
+  // `now` sampled at the top of this function. Refresh the clock before ageing.
+  now = millis();
+
   serviceTxn(_txInvite, now);
   serviceTxn(_txMisc, now);
   serviceTxn(_txReg, now);
   serviceTxn(_txOpt, now);
   serviceTxn(_tx200, now);
 
-  if (_call == SIP_CALL_ENDING && now - _endingSince > 6000) endCall(NULL);
-  if ((_call == SIP_CALL_INVITING || _call == SIP_CALL_RINGING) && now - _dlg.startedAt > 90000) hangup();
-  if (_call == SIP_CALL_INCOMING && now - _dlg.startedAt > 60000) {
+  if (_call == SIP_CALL_ENDING && (int32_t)(now - _endingSince) > 6000) endCall(NULL);
+  if ((_call == SIP_CALL_INVITING || _call == SIP_CALL_RINGING) && (int32_t)(now - _dlg.startedAt) > 90000) hangup();
+  if (_call == SIP_CALL_INCOMING && (int32_t)(now - _dlg.startedAt) > 60000) {
     String msg = buildResponse(_dlg.inviteReq, 480, "Temporarily Unavailable", "", "", _dlg.localTag);
     sendRaw(msg, _dlg.targetIp, _dlg.targetPort);
     endCall("Missed");
