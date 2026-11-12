@@ -208,6 +208,48 @@ struct ToneGen {
   }
 };
 
+// Short UI prompt tones: wake acknowledged / command accepted / window expired.
+struct PromptSeg { uint16_t freq; uint16_t ms; };
+static const PromptSeg kPromptWake[]    = {{880, 60}, {0, 40}, {1319, 110}};
+static const PromptSeg kPromptOk[]      = {{1397, 50}, {0, 20}, {1760, 70}};
+static const PromptSeg kPromptTimeout[] = {{988, 60}, {0, 30}, {740, 110}};
+
+static volatile uint8_t s_promptReq = AUDIO_PROMPT_NONE;
+static volatile bool s_promptBusy = false;
+static const PromptSeg *s_promptSegs = nullptr;
+static const int kPromptSegCount = 3;
+static int s_promptSegIdx = 0;
+static uint32_t s_promptSegMs = 0;
+static float s_promptPhase = 0;
+
+void audio_prompt(uint8_t kind) { s_promptReq = kind; }
+bool audio_prompt_busy() { return s_promptBusy; }
+
+// Render one 20 ms frame of the active prompt; returns false when finished.
+static bool prompt_render(int16_t *out) {
+  if (!s_promptSegs) return false;
+  if (s_promptSegIdx >= kPromptSegCount) { s_promptSegs = nullptr; return false; }
+  const PromptSeg &seg = s_promptSegs[s_promptSegIdx];
+  const uint32_t segMs = seg.ms;
+  memset(out, 0, FRAME_16K * sizeof(int16_t));
+  if (seg.freq) {
+    const float w = 2.0f * (float)M_PI * seg.freq / AUDIO_HW_RATE;
+    for (int i = 0; i < FRAME_16K; i++) {
+      const uint32_t t = s_promptSegMs + (uint32_t)((uint32_t)i * 1000u / AUDIO_HW_RATE);
+      float env = 1.0f;                               // 4 ms fades keep the notes click-free
+      if (t < 4) env = t / 4.0f;
+      else if (t + 4 > segMs) env = (float)(segMs - t) / 4.0f;
+      if (env < 0) env = 0;
+      out[i] = (int16_t)(sinf(s_promptPhase) * 6500.0f * env);
+      s_promptPhase += w;
+      if (s_promptPhase > 2 * (float)M_PI) s_promptPhase -= 2 * (float)M_PI;
+    }
+  }
+  s_promptSegMs += FRAME_MS;
+  if (s_promptSegMs >= segMs) { s_promptSegIdx++; s_promptSegMs = 0; s_promptPhase = 0; }
+  return s_promptSegIdx < kPromptSegCount;
+}
+
 // ---------------------------------------------------------------------------
 // Acoustic echo cancellation (esp-sr), V2 only
 // ---------------------------------------------------------------------------
@@ -501,6 +543,9 @@ static void audio_task(void *) {
       tone.reset();
       dsHist = usPrev = 0;
       pa_enable(m != AUDIO_IDLE);
+      // a prompt never survives a mode change (a call can start mid-chime)
+      s_promptSegs = nullptr;
+      s_promptBusy = false;
 #if BOARD_V2
       // Wake listening runs with the speaker silent, so the microphone can run at
       // full analogue gain; restore the call-tuned PGA as soon as a call starts.
@@ -531,7 +576,29 @@ static void audio_task(void *) {
 
     if (s_click) { s_click = false; clickFrames = 2; if (m == AUDIO_IDLE) pa_enable(true); }
 
+    // UI prompt tones are rendered here so the PA is otherwise off.
+    // (A request that arrives during a call is dropped, not queued.)
+    if (s_promptReq != AUDIO_PROMPT_NONE) {
+      const uint8_t kind = s_promptReq;
+      s_promptReq = AUDIO_PROMPT_NONE;
+      if (m == AUDIO_IDLE) {
+        s_promptSegs = kind == AUDIO_PROMPT_WAKE ? kPromptWake
+                     : (kind == AUDIO_PROMPT_OK ? kPromptOk : kPromptTimeout);
+        s_promptSegIdx = 0;
+        s_promptSegMs = 0;
+        s_promptPhase = 0;
+        s_promptBusy = true;
+        pa_enable(true);
+      }
+    }
+
     if (m == AUDIO_IDLE) {
+      if (s_promptSegs) {
+        const bool more = prompt_render(spk16);
+        write_stereo(spk16);
+        if (!more) { s_promptBusy = false; pa_enable(false); }
+        continue;   // never feed the prompt itself to the wake-word recogniser
+      }
       if (clickFrames > 0) {
         tone.fill(spk16, 1200, 0, 1000, 0, 6000);
         write_stereo(spk16);

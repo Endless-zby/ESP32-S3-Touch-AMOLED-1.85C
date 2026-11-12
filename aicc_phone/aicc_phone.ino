@@ -22,8 +22,13 @@ static RtpSession g_rtp;
 
 // Voice commands: the wake word opens a short window in which volume / call
 // commands are accepted, so random table talk does not dial the front desk.
+// The wake word is acknowledged with a chime + "在听..." so it is obvious when
+// to speak the command (Xiaoai-style: call first, then the instruction).
 static uint32_t g_awakeUntil = 0;
-static const uint32_t kAwakeWindowMs = 6000;
+static bool g_awakeActive = false;
+static uint32_t g_dialAt = 0;          // delayed dial so the OK chime is audible
+static String g_dialNumber;
+static const uint32_t kAwakeWindowMs = 8000;
 
 enum NetState { NET_IDLE, NET_CONNECTING, NET_CONNECTED, NET_SETUP };
 static NetState g_net = NET_IDLE;
@@ -376,20 +381,32 @@ void loop() {
       switch (wcmd) {
         case WAKE_CMD_WAKE:
           g_awakeUntil = wnow + kAwakeWindowMs;
-          audio_click();
+          g_awakeActive = true;
+          audio_prompt(AUDIO_PROMPT_WAKE);
+          ui_toast(STR_LISTENING, kAwakeWindowMs);
           break;
         case WAKE_CMD_VOL_UP:
         case WAKE_CMD_VOL_UP2:
           if (!awake) break;
           uiVolume(+10);
-          audio_click();
+          audio_prompt(AUDIO_PROMPT_OK);
+          {
+            char vbuf[32];
+            snprintf(vbuf, sizeof(vbuf), "%s %d%%", STR_VOLUME, (int)g_settings.volume);
+            ui_toast(vbuf, 1000);
+          }
           g_awakeUntil = wnow + kAwakeWindowMs;
           break;
         case WAKE_CMD_VOL_DOWN:
         case WAKE_CMD_VOL_DOWN2:
           if (!awake) break;
           uiVolume(-10);
-          audio_click();
+          audio_prompt(AUDIO_PROMPT_OK);
+          {
+            char vbuf[32];
+            snprintf(vbuf, sizeof(vbuf), "%s %d%%", STR_VOLUME, (int)g_settings.volume);
+            ui_toast(vbuf, 1000);
+          }
           g_awakeUntil = wnow + kAwakeWindowMs;
           break;
         case WAKE_CMD_CALL_FRONT:
@@ -398,7 +415,10 @@ void loop() {
           if (!awake) break;
           if (g_sip.isIdle()) {
             g_awakeUntil = 0;
-            uiDial(g_settings.dialNumber.c_str());
+            g_awakeActive = false;
+            audio_prompt(AUDIO_PROMPT_OK);
+            g_dialNumber = g_settings.dialNumber;
+            g_dialAt = wnow + 450;   // let the confirmation chime finish first
           }
           break;
         default:
@@ -408,6 +428,18 @@ void loop() {
   }
 
   uint32_t now = millis();
+
+  // Deferred dial from a voice command (so the confirmation chime is heard).
+  if (g_dialAt && (int32_t)(now - g_dialAt) >= 0) {
+    g_dialAt = 0;
+    uiDial(g_dialNumber.c_str());
+  }
+
+  // Closing the command window: a soft falling note asks for the wake word again.
+  if (g_awakeActive && (int32_t)(now - g_awakeUntil) >= 0) {
+    g_awakeActive = false;
+    audio_prompt(AUDIO_PROMPT_TIMEOUT);
+  }
 
   // call timer / meters (4x per second)
   if (now - g_lastUiTick >= 250) {

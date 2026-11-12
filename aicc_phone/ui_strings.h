@@ -44,6 +44,8 @@
 #define STR_UNMUTED         "取消静音"
 #define STR_VOLUME          "音量"
 #define STR_AI_AGENT        "AI 客服"
+#define STR_LISTENING       "在听..."
+
 
 #define STR_SETTINGS        "设置"
 #define STR_IP_ADDR         "本机"

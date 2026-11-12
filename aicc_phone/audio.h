@@ -28,6 +28,16 @@ void audio_set_res_suppress(bool on);      // residual echo suppression after th
 void audio_set_mute(bool mute);
 bool audio_is_muted();
 void audio_click();                       // short key click
+// Short UI prompt tones (wake acknowledged / command accepted / window expired).
+// Rendered by the audio task while idle, so the PA is only switched on briefly.
+enum AudioPrompt {
+  AUDIO_PROMPT_NONE = 0,
+  AUDIO_PROMPT_WAKE,     // rising two-note chime
+  AUDIO_PROMPT_OK,       // short confirmation
+  AUDIO_PROMPT_TIMEOUT,  // soft falling note
+};
+void audio_prompt(uint8_t kind);
+bool audio_prompt_busy();
 // 0..100 recent mic / speaker levels, for UI meters
 uint8_t audio_mic_level();
 uint8_t audio_spk_level();
