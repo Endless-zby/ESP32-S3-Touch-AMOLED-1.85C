@@ -36,8 +36,9 @@ static lv_obj_t *scr_setup, *setup_ssid, *setup_pass, *setup_url, *setup_status;
 static lv_obj_t *scr_dialer, *dial_status_icon, *dial_status_text, *dial_number, *dial_keypad, *dial_call_btn, *dial_del_btn, *dial_set_btn;
 static lv_obj_t *scr_call, *call_status, *call_party, *call_timer, *call_bar_mic, *call_bar_spk, *call_mute_btn, *call_mute_lbl, *call_volm_btn, *call_volp_btn, *call_hang_btn, *call_vol_lbl;
 static lv_obj_t *scr_in, *in_caller, *in_answer_btn, *in_reject_btn;
-static lv_obj_t *scr_set, *set_lines[4], *set_back_btn, *set_reset_btn, *set_vol_lbl, *set_vol_bar, *set_volm_btn, *set_volp_btn;
-static lv_obj_t *set_bri_lbl, *set_bri_bar, *set_brim_btn, *set_brip_btn, *set_dial_btn;
+static lv_obj_t *scr_set, *set_menu, *set_vol_lbl, *set_vol_sld, *set_bri_lbl, *set_bri_sld;
+static lv_obj_t *scr_info, *info_lines[4];
+static void update_settings_volume();
 static uint8_t s_brightness = 80;
 static uint32_t s_resetArmAt = 0;
 static lv_obj_t *toast_lbl = NULL;
@@ -216,6 +217,7 @@ static void call_event(lv_event_t *) {
   if (s_cb.onDial) s_cb.onDial(n.c_str());
 }
 
+static void dial_back_event(lv_event_t *) { key_click(); ui_show_face(); }
 static void settings_event(lv_event_t *) {
   key_click();
   // the application fills in the details and switches the screen
@@ -257,11 +259,13 @@ static void build_dialer() {
   lv_obj_add_event_cb(dial_keypad, keypad_event, LV_EVENT_VALUE_CHANGED, NULL);
 
   // bottom row centred on y = 310
-  dial_del_btn = mk_pill_btn(scr_dialer, 50, 40, COL_KEY, LV_SYMBOL_BACKSPACE, &font_cn_18, -68, 130, NULL);
+  lv_obj_t *dback = mk_pill_btn(scr_dialer, 44, 36, COL_KEY, LV_SYMBOL_LEFT, &font_cn_18, -100, 130, NULL);
+  lv_obj_add_event_cb(dback, dial_back_event, LV_EVENT_SHORT_CLICKED, NULL);
+  dial_del_btn = mk_pill_btn(scr_dialer, 50, 40, COL_KEY, LV_SYMBOL_BACKSPACE, &font_cn_18, -54, 130, NULL);
   lv_obj_add_event_cb(dial_del_btn, del_event, LV_EVENT_SHORT_CLICKED, NULL);
   lv_obj_add_event_cb(dial_del_btn, del_event, LV_EVENT_LONG_PRESSED, NULL);
-  dial_call_btn = mk_pill_btn(scr_dialer, 76, 50, COL_GREEN, LV_SYMBOL_CALL, &font_cn_24, 0, 130, call_event);
-  dial_set_btn = mk_pill_btn(scr_dialer, 50, 40, COL_KEY, LV_SYMBOL_SETTINGS, &font_cn_18, 68, 130, settings_event);
+  dial_call_btn = mk_pill_btn(scr_dialer, 72, 48, COL_GREEN, LV_SYMBOL_CALL, &font_cn_24, 12, 130, call_event);
+  dial_set_btn = mk_pill_btn(scr_dialer, 44, 36, COL_KEY, LV_SYMBOL_SETTINGS, &font_cn_18, 84, 130, settings_event);
   update_number_label();
 }
 
@@ -356,68 +360,139 @@ static void build_incoming() {
 static void back_event(lv_event_t *) { key_click(); ui_show_face(); }
 static void reset_event(lv_event_t *) { key_click(); if (s_cb.onResetWifi) s_cb.onResetWifi(); }
 
-static void set_volm_event(lv_event_t *) { key_click(); if (s_cb.onVolume) s_cb.onVolume(-10); }
-static void apply_brightness(int v) {
-  s_brightness = (uint8_t)constrain(v, 20, 100);
-  backlight_set(s_brightness);
-  lv_label_set_text_fmt(set_bri_lbl, LV_SYMBOL_EYE_OPEN " " "亮度 %d%%", s_brightness);
-  lv_bar_set_value(set_bri_bar, s_brightness, LV_ANIM_ON);
+
+// ---------------------------------------------------------------------------
+// settings: a scrolling menu built from explicit coordinates (no flex layout,
+// sliders commit on release - a set_value() inside VALUE_CHANGED froze LVGL)
+// ---------------------------------------------------------------------------
+static lv_obj_t *set_card(lv_obj_t *parent, int y, int h, uint32_t color, lv_event_cb_t cb) {
+  lv_obj_t *c = lv_obj_create(parent);
+  lv_obj_set_size(c, 300, h);
+  lv_obj_align(c, LV_ALIGN_TOP_MID, 0, y);
+  lv_obj_set_style_radius(c, h / 2, 0);
+  lv_obj_set_style_bg_color(c, lv_color_hex(color), 0);
+  lv_obj_set_style_bg_opa(c, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(c, 0, 0);
+  lv_obj_set_style_pad_all(c, 0, 0);
+  lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
+  if (cb) { lv_obj_add_flag(c, LV_OBJ_FLAG_CLICKABLE); lv_obj_add_event_cb(c, cb, LV_EVENT_SHORT_CLICKED, NULL); }
+  return c;
 }
-static void set_brim_event(lv_event_t *) { key_click(); apply_brightness(s_brightness - 10); }
-static void set_brip_event(lv_event_t *) { key_click(); apply_brightness(s_brightness + 10); }
+
+static lv_obj_t *set_text(lv_obj_t *parent, const char *txt, const lv_font_t *font, uint32_t color) {
+  lv_obj_t *l = lv_label_create(parent);
+  lv_label_set_text(l, txt);
+  lv_obj_set_style_text_font(l, font, 0);
+  lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+  return l;
+}
+
+static lv_obj_t *set_slider_card(lv_obj_t *parent, int y, const char *txt, int value, lv_obj_t **lblOut, lv_obj_t **sldOut) {
+  lv_obj_t *c = set_card(parent, y, 92, COL_CARD, NULL);
+  lv_obj_t *l = set_text(c, txt, &font_cn_18, COL_DIM);
+  lv_obj_align(l, LV_ALIGN_TOP_LEFT, 20, 12);
+  *lblOut = l;
+  lv_obj_t *sl = lv_slider_create(c);
+  lv_obj_set_size(sl, 264, 20);
+  lv_obj_align(sl, LV_ALIGN_BOTTOM_MID, 0, -12);
+  lv_slider_set_range(sl, 0, 100);
+  lv_slider_set_value(sl, value, LV_ANIM_OFF);
+  lv_obj_set_style_bg_color(sl, lv_color_hex(COL_KEY), LV_PART_MAIN);
+  lv_obj_set_style_radius(sl, 10, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(sl, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
+  lv_obj_set_style_radius(sl, 10, LV_PART_INDICATOR);
+  lv_obj_set_style_bg_color(sl, lv_color_white(), LV_PART_KNOB);
+  lv_obj_set_style_pad_all(sl, 0, LV_PART_KNOB);
+  *sldOut = sl;
+  return c;
+}
+
+static void vol_sld_event(lv_event_t *e) {
+  const lv_event_code_t code = lv_event_get_code(e);
+  if (code == LV_EVENT_VALUE_CHANGED) {
+    lv_label_set_text_fmt(set_vol_lbl, LV_SYMBOL_VOLUME_MAX "  " STR_VOLUME " %d%%", lv_slider_get_value(set_vol_sld));
+  } else if (code == LV_EVENT_RELEASED) {          // commit once, no write-back
+    const int v = lv_slider_get_value(set_vol_sld);
+    const int d = v - (int)s_volume;
+    s_volume = v;
+    if (d && s_cb.onVolume) s_cb.onVolume(d);
+  }
+}
+static void bri_sld_event(lv_event_t *e) {
+  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+  s_brightness = (uint8_t)lv_slider_get_value(set_bri_sld);
+  lv_label_set_text_fmt(set_bri_lbl, LV_SYMBOL_EYE_OPEN "  " STR_BRIGHTNESS " %d%%", s_brightness);
+  backlight_set(s_brightness);
+}
 static void set_dial_event(lv_event_t *) { key_click(); ui_show_dialer(); }
-static void set_reset_event(lv_event_t *) {
+static void set_info_event(lv_event_t *) { key_click(); load(scr_info, UI_INFO); }
+static void set_back_event(lv_event_t *) { key_click(); ui_show_face(); }
+static void info_back_event(lv_event_t *) { key_click(); load(scr_set, UI_SETTINGS); }
+static void set_reset_event(lv_event_t *e) {
   key_click();
+  lv_obj_t *c = (lv_obj_t *)lv_event_get_current_target(e);
   if (s_resetArmAt && millis() - s_resetArmAt < 4000) { s_resetArmAt = 0; if (s_cb.onResetWifi) s_cb.onResetWifi(); return; }
   s_resetArmAt = millis();
-  lv_obj_set_style_bg_color(set_reset_btn, lv_color_hex(COL_RED), 0);
-  lv_label_set_text(lv_obj_get_child(set_reset_btn, 0), LV_SYMBOL_WIFI " 再点一次确认");
+  lv_obj_t *l = lv_obj_get_child(c, 0);
+  if (l) lv_label_set_text(l, "再点一次确认重新配网");
 }
-static void set_volp_event(lv_event_t *) { key_click(); if (s_cb.onVolume) s_cb.onVolume(+10); }
 
 static void update_settings_volume() {
-  if (!set_vol_lbl) return;
-  lv_label_set_text_fmt(set_vol_lbl, LV_SYMBOL_VOLUME_MAX " " STR_VOLUME " %d%%", s_volume);
-  lv_bar_set_value(set_vol_bar, s_volume, LV_ANIM_ON);
+  if (set_vol_sld && lv_slider_get_value(set_vol_sld) != s_volume) lv_slider_set_value(set_vol_sld, s_volume, LV_ANIM_OFF);
+  if (set_vol_lbl) lv_label_set_text_fmt(set_vol_lbl, LV_SYMBOL_VOLUME_MAX "  " STR_VOLUME " %d%%", s_volume);
 }
 
 static void build_settings() {
   scr_set = mk_screen();
-  mk_label(scr_set, LV_SYMBOL_SETTINGS " " STR_SETTINGS, &font_cn_24, COL_TEXT, LV_ALIGN_TOP_MID, 0, 34);
-  for (int i = 0; i < 4; i++) {
-    set_lines[i] = mk_label(scr_set, "", &font_cn_18, COL_DIM, LV_ALIGN_TOP_MID, 0, 76 + i * 26);
-    lv_obj_set_width(set_lines[i], 250);
-    lv_obj_set_style_text_align(set_lines[i], LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(set_lines[i], LV_LABEL_LONG_DOT);
-  }
-  // volume row (centre y = 180 + 14)
-  set_volm_btn = mk_round_btn(scr_set, 44, COL_KEY, LV_SYMBOL_MINUS, &font_cn_18, -95, 14, set_volm_event);
-  set_volp_btn = mk_round_btn(scr_set, 44, COL_KEY, LV_SYMBOL_PLUS, &font_cn_18, 95, 14, set_volp_event);
-  set_vol_bar = lv_bar_create(scr_set);
-  lv_obj_set_size(set_vol_bar, 110, 10);
-  lv_obj_align(set_vol_bar, LV_ALIGN_CENTER, 0, 14);
-  lv_bar_set_range(set_vol_bar, 0, 100);
-  lv_obj_set_style_bg_color(set_vol_bar, lv_color_hex(COL_KEY), LV_PART_MAIN);
-  lv_obj_set_style_bg_color(set_vol_bar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
-  lv_obj_set_style_radius(set_vol_bar, 5, LV_PART_MAIN);
-  lv_obj_set_style_radius(set_vol_bar, 5, LV_PART_INDICATOR);
-  set_vol_lbl = mk_label(scr_set, "", &font_cn_18, COL_TEXT, LV_ALIGN_CENTER, 0, 44);
+  set_menu = lv_obj_create(scr_set);
+  lv_obj_set_size(set_menu, 320, 336);
+  lv_obj_center(set_menu);
+  lv_obj_set_style_bg_opa(set_menu, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(set_menu, 0, 0);
+  lv_obj_set_style_pad_all(set_menu, 0, 0);
+  lv_obj_set_scrollbar_mode(set_menu, LV_SCROLLBAR_MODE_OFF);
+  lv_obj_set_size(set_menu, 320, 336);
+
+  lv_obj_t *t = set_text(set_menu, LV_SYMBOL_SETTINGS "  " STR_SETTINGS, &font_cn_24, COL_TEXT);
+  lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 6);
+
+  set_slider_card(set_menu, 50, LV_SYMBOL_VOLUME_MAX "  " STR_VOLUME, s_volume, &set_vol_lbl, &set_vol_sld);
+  lv_obj_add_event_cb(set_vol_sld, vol_sld_event, LV_EVENT_ALL, NULL);
+  set_slider_card(set_menu, 152, LV_SYMBOL_EYE_OPEN "  " STR_BRIGHTNESS, s_brightness, &set_bri_lbl, &set_bri_sld);
+  lv_obj_add_event_cb(set_bri_sld, bri_sld_event, LV_EVENT_ALL, NULL);
   update_settings_volume();
-  // brightness row (centre y = -24)
-  set_brim_btn = mk_round_btn(scr_set, 40, COL_KEY, LV_SYMBOL_MINUS, &font_cn_18, -95, -24, set_brim_event);
-  set_brip_btn = mk_round_btn(scr_set, 40, COL_KEY, LV_SYMBOL_PLUS, &font_cn_18, 95, -24, set_brip_event);
-  set_bri_bar = lv_bar_create(scr_set);
-  lv_obj_set_size(set_bri_bar, 110, 10);
-  lv_obj_align(set_bri_bar, LV_ALIGN_CENTER, 0, -24);
-  lv_bar_set_range(set_bri_bar, 0, 100);
-  lv_obj_set_style_bg_color(set_bri_bar, lv_color_hex(COL_KEY), LV_PART_MAIN);
-  lv_obj_set_style_bg_color(set_bri_bar, lv_color_hex(COL_ORANGE), LV_PART_INDICATOR);
-  set_bri_lbl = mk_label(scr_set, "", &font_cn_18, COL_TEXT, LV_ALIGN_CENTER, 0, -52);
-  // dialpad lives here (the voice-first home has no keypad)
-  set_dial_btn = mk_pill_btn(scr_set, 170, 40, COL_ACCENT, LV_SYMBOL_CALL " 拨号盘", &font_cn_18, 0, 52, set_dial_event);
-  set_reset_btn = mk_pill_btn(scr_set, 170, 42, COL_ORANGE, LV_SYMBOL_WIFI " " STR_RESET_WIFI, &font_cn_18, 0, 96, set_reset_event);
-  set_back_btn = mk_pill_btn(scr_set, 126, 40, COL_KEY, LV_SYMBOL_LEFT " " STR_BACK, &font_cn_18, 0, 136, back_event);
-  apply_brightness(s_brightness);
+  lv_label_set_text_fmt(set_bri_lbl, LV_SYMBOL_EYE_OPEN "  " STR_BRIGHTNESS " %d%%", s_brightness);
+
+  lv_obj_t *dial = set_card(set_menu, 254, 52, COL_ACCENT, set_dial_event);
+  lv_obj_t *dl = set_text(dial, LV_SYMBOL_CALL "  " STR_DIALPAD, &font_cn_18, COL_TEXT);
+  lv_obj_center(dl);
+  lv_obj_t *rst = set_card(set_menu, 314, 52, COL_ORANGE, set_reset_event);
+  lv_obj_t *rl = set_text(rst, LV_SYMBOL_WIFI "  " STR_RESET_WIFI, &font_cn_18, COL_TEXT);
+  lv_obj_center(rl);
+  lv_obj_t *inf = set_card(set_menu, 374, 52, COL_KEY, set_info_event);
+  lv_obj_t *il = set_text(inf, LV_SYMBOL_LIST "  " STR_DEVICE_INFO, &font_cn_18, COL_TEXT);
+  lv_obj_center(il);
+  lv_obj_t *bak = set_card(set_menu, 434, 52, COL_KEY, set_back_event);
+  lv_obj_t *bl = set_text(bak, LV_SYMBOL_LEFT "  " STR_BACK, &font_cn_18, COL_TEXT);
+  lv_obj_center(bl);
+  backlight_set(s_brightness);
+}
+
+static void build_info() {
+  scr_info = mk_screen();
+  lv_obj_t *t = set_text(scr_info, LV_SYMBOL_LIST "  " STR_DEVICE_INFO, &font_cn_24, COL_TEXT);
+  lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 30);
+  for (int i = 0; i < 4; i++) {
+    info_lines[i] = mk_label(scr_info, "", &font_cn_18, COL_DIM, LV_ALIGN_TOP_MID, 0, 76 + i * 26);
+    lv_obj_set_width(info_lines[i], 250);
+    lv_obj_set_style_text_align(info_lines[i], LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(info_lines[i], LV_LABEL_LONG_DOT);
+  }
+  lv_obj_t *bak = set_card(scr_info, 210, 46, COL_KEY, NULL);
+  lv_obj_t *bl = set_text(bak, LV_SYMBOL_LEFT "  " STR_BACK, &font_cn_18, COL_TEXT);
+  lv_obj_center(bl);
+  lv_obj_add_flag(bak, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(bak, info_back_event, LV_EVENT_SHORT_CLICKED, NULL);
 }
 
 
@@ -632,6 +707,7 @@ void ui_init(const UiCallbacks &cb) {
   build_call();
   build_incoming();
   build_settings();
+  build_info();
   build_face();
   load(scr_boot, UI_BOOT);
 }
@@ -703,11 +779,12 @@ void ui_show_incoming(const char *caller) {
 }
 
 void ui_show_settings(const char *ip, const char *server, const char *sipState, const char *apName, const char *version) {
-  lv_label_set_text_fmt(set_lines[0], STR_IP_ADDR ": %s", ip);
-  lv_label_set_text_fmt(set_lines[1], STR_SERVER ": %s", server);
-  lv_label_set_text_fmt(set_lines[2], STR_STATUS ": %s", sipState);
-  lv_label_set_text_fmt(set_lines[3], STR_VERSION " %s  " STR_HOTSPOT " %s", version, apName);
-  load(scr_set, UI_SETTINGS);
+  lv_label_set_text_fmt(info_lines[0], STR_IP_ADDR ": %s", ip);
+  lv_label_set_text_fmt(info_lines[1], STR_SERVER ": %s", server);
+  lv_label_set_text_fmt(info_lines[2], STR_STATUS ": %s", sipState);
+  lv_label_set_text_fmt(info_lines[3], STR_VERSION " %s  " STR_HOTSPOT " %s", version, apName);
+  if (s_screen != UI_SETTINGS && s_screen != UI_INFO) load(scr_set, UI_SETTINGS);
+  update_settings_volume();
 }
 
 void ui_refresh_now() { lv_refr_now(NULL); }
@@ -736,6 +813,11 @@ void ui_face_call_active(bool active) {
   if (!face_hang) return;
   if (active) lv_obj_clear_flag(face_hang, LV_OBJ_FLAG_HIDDEN);
   else lv_obj_add_flag(face_hang, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_settings_back() {
+  if (ui_screen() == UI_INFO) load(scr_set, UI_SETTINGS);
+  else ui_show_face();
 }
 
 void ui_face_listening(bool on) {
