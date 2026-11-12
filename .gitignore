@@ -1,0 +1,4 @@
+build/
+aicc_phone/build/
+*.bin.tmp
+.DS_Store
