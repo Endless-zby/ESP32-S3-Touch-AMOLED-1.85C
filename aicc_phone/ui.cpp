@@ -51,7 +51,7 @@ static FaceModel s_face;
 static FaceRenderer s_faceR;
 static uint16_t *s_faceBuf = NULL;
 static lv_image_dsc_t s_faceDsc;
-static lv_obj_t *scr_face, *face_canvas, *face_clock, *face_batt, *face_batt_fill, *face_charge, *face_batt_pct, *face_ring, *face_hang;
+static lv_obj_t *scr_face, *face_canvas, *face_clock, *face_batt, *face_batt_fill, *face_batt_pct, *face_ring, *face_hang;
 static lv_timer_t *face_timer = NULL;
 static bool s_faceCall = false;
 static uint32_t s_battAt = 0;
@@ -458,13 +458,13 @@ static void face_battery_update(bool force) {
   }
   if (!force && present && pct == s_battPct) return;
   s_battPct = present ? pct : -1;
-  lv_obj_set_width(face_batt_fill, pct > 0 ? (pct * 30 / 100 + 2) : 0);
-  lv_obj_set_style_bg_color(face_batt_fill, lv_color_hex(pct <= 20 ? COL_RED : COL_TEXT), 0);
+  lv_obj_set_width(face_batt_fill, pct > 0 ? (pct * 46 / 100 + 2) : 0);
+  lv_obj_set_style_bg_color(face_batt_fill, lv_color_hex(pct <= 20 ? COL_RED : COL_ACCENT), 0);
   lv_obj_set_style_border_color(face_batt, lv_color_hex(present ? COL_DIM : COL_RED), 0);
   if (face_batt_pct) {
-    if (present) lv_label_set_text_fmt(face_batt_pct, "%d%%", pct);
+    if (present) lv_label_set_text_fmt(face_batt_pct, "%d", pct);
     else lv_label_set_text(face_batt_pct, "--");
-    lv_obj_set_style_text_color(face_batt_pct, lv_color_hex(pct <= 20 ? COL_RED : COL_DIM), 0);
+    lv_obj_set_style_text_color(face_batt_pct, lv_color_hex(pct <= 20 ? COL_RED : COL_TEXT), 0);
   }
 }
 
@@ -524,26 +524,25 @@ static void build_face() {
 
   face_clock = mk_label(scr_face, "--:--", &lv_font_montserrat_24, COL_DIM, LV_ALIGN_TOP_MID, 0, 12);
   face_batt = lv_obj_create(scr_face);
-  lv_obj_set_size(face_batt, 40, 18);
-  lv_obj_align(face_batt, LV_ALIGN_BOTTOM_MID, -28, -30);   // bottom centre: the corners are outside the round glass
+  lv_obj_set_size(face_batt, 54, 22);
+  lv_obj_align(face_batt, LV_ALIGN_BOTTOM_MID, 0, -28);   // bottom centre, inside the round glass
   lv_obj_set_style_bg_opa(face_batt, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(face_batt, 2, 0);
   lv_obj_set_style_border_color(face_batt, lv_color_hex(COL_DIM), 0);
-  lv_obj_set_style_radius(face_batt, 4, 0);
+  lv_obj_set_style_radius(face_batt, 5, 0);
   lv_obj_set_style_pad_all(face_batt, 0, 0);
   lv_obj_clear_flag(face_batt, LV_OBJ_FLAG_SCROLLABLE);
   face_batt_fill = lv_obj_create(face_batt);
-  lv_obj_set_size(face_batt_fill, 2, 10);
-  lv_obj_align(face_batt_fill, LV_ALIGN_LEFT_MID, 2, 0);
-  lv_obj_set_style_bg_color(face_batt_fill, lv_color_hex(COL_TEXT), 0);
+  lv_obj_set_size(face_batt_fill, 2, 14);
+  lv_obj_align(face_batt_fill, LV_ALIGN_LEFT_MID, 3, 0);
+  lv_obj_set_style_bg_color(face_batt_fill, lv_color_hex(COL_ACCENT), 0);
   lv_obj_set_style_border_width(face_batt_fill, 0, 0);
-  lv_obj_set_style_radius(face_batt_fill, 2, 0);
-  face_batt_pct = mk_label(scr_face, "--", &font_cn_18, COL_DIM, LV_ALIGN_BOTTOM_MID, 26, -30);
-  face_charge = lv_label_create(face_batt);
-  lv_label_set_text(face_charge, LV_SYMBOL_CHARGE);
-  lv_obj_set_style_text_font(face_charge, &font_cn_18, 0);
-  lv_obj_set_style_text_color(face_charge, lv_color_hex(COL_ORANGE), 0);
-  lv_obj_align(face_charge, LV_ALIGN_CENTER, 0, 0);
+  lv_obj_set_style_radius(face_batt_fill, 3, 0);
+  face_batt_pct = lv_label_create(face_batt);
+  lv_label_set_text(face_batt_pct, "--");
+  lv_obj_set_style_text_font(face_batt_pct, &font_cn_18, 0);
+  lv_obj_set_style_text_color(face_batt_pct, lv_color_hex(COL_TEXT), 0);
+  lv_obj_align(face_batt_pct, LV_ALIGN_CENTER, 0, 0);
 
   // purple breathing ring around the rim while the wake word waits for a command
   face_ring = lv_obj_create(scr_face);
