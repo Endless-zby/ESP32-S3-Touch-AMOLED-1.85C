@@ -459,7 +459,8 @@ static void face_battery_update(bool force) {
   if (!force && present && pct == s_battPct) return;
   s_battPct = present ? pct : -1;
   lv_obj_set_width(face_batt_fill, pct > 0 ? (pct * 46 / 100 + 2) : 0);
-  lv_obj_set_style_bg_color(face_batt_fill, lv_color_hex(pct <= 20 ? COL_RED : COL_ACCENT), 0);
+  lv_obj_set_style_bg_color(face_batt_fill, lv_color_hex(pct <= 20 ? COL_RED : COL_TEXT), 0);
+  lv_obj_set_style_bg_opa(face_batt_fill, pct <= 20 ? LV_OPA_80 : LV_OPA_50, 0);
   lv_obj_set_style_border_color(face_batt, lv_color_hex(present ? COL_DIM : COL_RED), 0);
   if (face_batt_pct) {
     if (present) lv_label_set_text_fmt(face_batt_pct, "%d", pct);
