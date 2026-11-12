@@ -4,7 +4,7 @@
 #include "touch.h"
 #include <esp_heap_caps.h>
 
-#define BUF_LINES 24
+#define BUF_LINES 32   // fewer QSPI flushes while scrolling (2x360x32x2 = 46 MB ... bytes of DMA RAM)
 
 static lv_display_t *s_disp = NULL;
 

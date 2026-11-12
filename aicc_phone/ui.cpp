@@ -378,7 +378,6 @@ static lv_obj_t *set_card_base(lv_obj_t *parent, int y, int h) {
   lv_obj_set_style_bg_opa(c, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(c, 0, 0);
   lv_obj_set_style_pad_all(c, 0, 0);
-  lv_obj_set_style_clip_corner(c, true, 0);
   lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
   return c;
 }
@@ -400,7 +399,7 @@ static void row_paint(SetRow &r, int v, int vmin, int vmax, bool percent) {
   const bool dark_text = w > 150;
   const uint32_t fg = dark_text ? 0x1B1E24 : 0xE8ECF2;
   lv_obj_set_style_text_color(r.title, lv_color_hex(fg), 0);
-  lv_obj_set_style_text_color(r.sub, lv_color_hex(dark_text ? 0x5A6068 : 0x9AA3B2), 0);
+  if (r.sub) lv_obj_set_style_text_color(r.sub, lv_color_hex(dark_text ? 0x5A6068 : 0x9AA3B2), 0);
   lv_obj_set_style_text_color(r.val, lv_color_hex(w > 262 ? 0x1B1E24 : 0xE8ECF2), 0);
   if (percent) lv_label_set_text_fmt(r.val, "%d%%", v);
 }
@@ -417,20 +416,14 @@ static void slider_row(lv_obj_t *parent, int y, const char *title, const char *s
   lv_obj_set_style_border_width(r->fill, 0, 0);
   lv_obj_clear_flag(r->fill, LV_OBJ_FLAG_SCROLLABLE);
 
-  r->icon = lv_obj_create(r->card);
-  lv_obj_set_size(r->icon, 44, 44);
-  lv_obj_align(r->icon, LV_ALIGN_LEFT_MID, 14, 0);
-  lv_obj_set_style_radius(r->icon, 14, 0);
-  lv_obj_set_style_bg_color(r->icon, lv_color_hex(0x2E333D), 0);
-  lv_obj_set_style_border_width(r->icon, 0, 0);
-  lv_obj_clear_flag(r->icon, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_t *il = set_text(r->icon, icon, &font_cn_18, pastel);
-  lv_obj_center(il);
+  lv_obj_t *il = set_text(r->card, icon, &font_cn_18, pastel);
+  lv_obj_align(il, LV_ALIGN_LEFT_MID, 30, 0);
 
   r->title = set_text(r->card, title, &font_cn_18, 0xE8ECF2);
-  lv_obj_align(r->title, LV_ALIGN_LEFT_MID, 70, -11);
+  lv_obj_align(r->title, LV_ALIGN_LEFT_MID, 72, -10);
   r->sub = set_text(r->card, sub, &font_cn_18, 0x9AA3B2);
-  lv_obj_align(r->sub, LV_ALIGN_LEFT_MID, 70, 13);
+  lv_obj_align(r->sub, LV_ALIGN_LEFT_MID, 72, 12);
+  lv_obj_add_flag(r->sub, LV_OBJ_FLAG_HIDDEN);   // hidden but kept for row_paint
   r->val = set_text(r->card, "0%", &lv_font_montserrat_20, 0xE8ECF2);
   lv_obj_align(r->val, LV_ALIGN_RIGHT_MID, -18, 0);
 
@@ -470,19 +463,15 @@ static void bri_row_event(lv_event_t *e) {
 static lv_obj_t *list_row(lv_obj_t *parent, int y, const char *icon, uint32_t iconColor, uint32_t iconBg,
                           const char *title, const char *sub, const char *right, lv_event_cb_t cb) {
   lv_obj_t *c = set_card_base(parent, y, 62);
-  lv_obj_t *ib = lv_obj_create(c);
-  lv_obj_set_size(ib, 40, 40);
-  lv_obj_align(ib, LV_ALIGN_LEFT_MID, 14, 0);
-  lv_obj_set_style_radius(ib, 12, 0);
-  lv_obj_set_style_bg_color(ib, lv_color_hex(iconBg), 0);
-  lv_obj_set_style_border_width(ib, 0, 0);
-  lv_obj_clear_flag(ib, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_t *il = set_text(ib, icon, &font_cn_18, iconColor);
-  lv_obj_center(il);
+  lv_obj_t *il = set_text(c, icon, &font_cn_18, iconColor);
+  lv_obj_align(il, LV_ALIGN_LEFT_MID, 28, 0);
   lv_obj_t *t = set_text(c, title, &font_cn_18, 0xE8ECF2);
-  lv_obj_align(t, LV_ALIGN_LEFT_MID, 66, -10);
-  lv_obj_t *sb = set_text(c, sub, &font_cn_18, 0x8A93A6);
-  lv_obj_align(sb, LV_ALIGN_LEFT_MID, 66, 12);
+  lv_obj_align(t, LV_ALIGN_LEFT_MID, 64, 0);
+  if (sub) {
+    lv_obj_t *sb = set_text(c, sub, &font_cn_18, 0x8A93A6);
+    lv_obj_align(sb, LV_ALIGN_LEFT_MID, 64, 14);
+    lv_obj_add_flag(sb, LV_OBJ_FLAG_HIDDEN);
+  }
   if (right) {
     lv_obj_t *rl = set_text(c, right, &font_cn_18, 0x8A93A6);
     lv_obj_align(rl, LV_ALIGN_RIGHT_MID, -16, 0);
