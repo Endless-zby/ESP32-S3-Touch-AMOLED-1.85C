@@ -14,10 +14,16 @@ struct UiCallbacks {
   void (*onSettings)() = nullptr;          // gear button pressed
 };
 
-enum UiScreen { UI_BOOT, UI_SETUP, UI_DIALER, UI_CALL, UI_INCOMING, UI_SETTINGS };
+enum UiScreen { UI_BOOT, UI_SETUP, UI_FACE, UI_DIALER, UI_CALL, UI_INCOMING, UI_SETTINGS };
 
 void ui_init(const UiCallbacks &cb);
 UiScreen ui_screen();
+
+// Face home screen (idle + in-call). Expression ids come from face_model.h ExprId.
+void ui_show_face();
+void ui_face_set_expr(int exprId);
+void ui_face_call_active(bool active);   // show the hang-up button; tapping the face hangs up
+void ui_face_levels(uint8_t mic, uint8_t spk);   // listening / speaking expressions
 
 void ui_show_boot(const char *status);
 void ui_boot_status(const char *status);

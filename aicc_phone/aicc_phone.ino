@@ -13,6 +13,7 @@
 #include "ui_strings.h"
 #include "audio.h"
 #include "wake_word.h"
+#include "face_model.h"
 #include "rtp.h"
 #include "sip.h"
 #include "web_portal.h"
@@ -97,11 +98,13 @@ static void startSip() {
 static void onCallState(SipCallState s) {
   switch (s) {
     case SIP_CALL_INVITING:
-      ui_show_call(g_sip.remoteParty().c_str(), STR_CALLING);
+      ui_show_face();
+      ui_face_call_active(true);
+      ui_face_set_expr(EX_CONNECTING);
       audio_set_mode(AUDIO_IDLE);
       break;
     case SIP_CALL_RINGING:
-      ui_call_status(STR_RINGING_OUT);
+      ui_face_set_expr(EX_CONNECTING);
       if (audio_mode() != AUDIO_CALL) audio_set_mode(AUDIO_RINGBACK);
       break;
     case SIP_CALL_INCOMING:
@@ -110,12 +113,11 @@ static void onCallState(SipCallState s) {
       break;
     case SIP_CALL_CONNECTED:
       g_callConnectedAt = millis();
-      if (ui_screen() != UI_CALL) ui_show_call(g_sip.remoteParty().c_str(), STR_CONNECTED);
-      else ui_call_status(STR_CONNECTED);
-      ui_call_timer(0, true);
+      ui_show_face();
+      ui_face_call_active(true);
+      ui_face_set_expr(EX_LISTENING);
       break;
     case SIP_CALL_ENDING:
-      ui_call_status(STR_ENDING);
       audio_set_mode(AUDIO_IDLE);
       break;
     case SIP_CALL_IDLE: {
@@ -123,8 +125,9 @@ static void onCallState(SipCallState s) {
       audio_set_mute(false);
       g_rtp.clearRemote();
       const char *why = endReasonText(g_sip.lastStatus());
+      ui_show_face();
+      ui_face_call_active(false);
       if (ui_screen() == UI_INCOMING) ui_show_call(g_sip.remoteParty().c_str(), why);
-      else if (ui_screen() == UI_CALL) ui_call_status(why);
       else ui_toast(why);
       ui_call_timer(0, false);
       g_endedAt = millis();
@@ -215,7 +218,12 @@ static void onWifiConnected() {
   }
   startSip();
   ui_set_default_number(g_settings.dialNumber.c_str());
-  ui_show_dialer();
+  static bool ntpStarted = false;
+  if (!ntpStarted) {
+    ntpStarted = true;
+    configTime(8 * 3600, 0, "ntp.aliyun.com", "ntp1.aliyun.com", "pool.ntp.org");
+  }
+  ui_show_face();
   refreshNetStatus();
   if (g_apStopAt) ui_toast(STR_SETUP_OK, 2500);
 }
@@ -346,6 +354,7 @@ void setup() {
 
   // Wake word / command words (ESP-SR MultiNet7, model pack in the "model" partition)
   WakeWord::begin();
+  pinMode(0, INPUT_PULLUP);   // BOOT button (also the ESP32-S3 boot strap)
 
   g_sip.onCallState = onCallState;
   g_sip.onRegState = onRegState;
@@ -427,6 +436,21 @@ void loop() {
     }
   }
 
+  // BOOT (GPIO0, active low): open/close the settings page.
+  {
+    static bool bootWas = false;
+    static uint32_t bootAt = 0;
+    const bool bootNow = (digitalRead(0) == LOW);
+    const uint32_t bn = millis();
+    if (bootNow && !bootWas && bn - bootAt > 250) {
+      bootAt = bn;
+      audio_click();
+      if (ui_screen() == UI_SETTINGS) ui_show_face();
+      else showSettings();
+    }
+    bootWas = bootNow;
+  }
+
   uint32_t now = millis();
 
   // Deferred dial from a voice command (so the confirmation chime is heard).
@@ -444,14 +468,11 @@ void loop() {
   // call timer / meters (4x per second)
   if (now - g_lastUiTick >= 250) {
     g_lastUiTick = now;
-    if (ui_screen() == UI_CALL) {
-      if (g_callConnectedAt) ui_call_timer((now - g_callConnectedAt) / 1000, true);
-      ui_call_levels(audio_mic_level(), audio_spk_level());
-    }
+    if (ui_screen() == UI_FACE) ui_face_levels(audio_mic_level(), audio_spk_level());
     // return to the dialer a moment after a call has ended
     if (g_endedAt && g_sip.isIdle() && now - g_endedAt > 2500 && (ui_screen() == UI_CALL || ui_screen() == UI_INCOMING)) {
       g_endedAt = 0;
-      ui_show_dialer();
+      ui_show_face();
       refreshNetStatus();
     }
     if (ui_screen() == UI_SETTINGS) {

@@ -4,6 +4,11 @@
 #include "ui.h"
 #include "ui_strings.h"
 #include "config.h"
+#include "face_model.h"
+#include "face_render.h"
+#include "board_io.h"
+#include <esp_heap_caps.h>
+#include <time.h>
 
 LV_FONT_DECLARE(font_cn_18);
 LV_FONT_DECLARE(font_cn_24);
@@ -39,6 +44,17 @@ static String s_number;        // digits typed so far
 static String s_defaultNumber; // number used when nothing typed
 static bool s_muted = false;
 static int s_volume = DEF_VOLUME;
+
+// ---- face home screen (idle + in-call) ----
+static FaceModel s_face;
+static FaceRenderer s_faceR;
+static uint16_t *s_faceBuf = NULL;
+static lv_image_dsc_t s_faceDsc;
+static lv_obj_t *scr_face, *face_canvas, *face_clock, *face_batt, *face_batt_fill, *face_charge, *face_hang;
+static lv_timer_t *face_timer = NULL;
+static bool s_faceCall = false;
+static uint32_t s_battAt = 0;
+static int s_battPct = -1;
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -324,7 +340,7 @@ static void build_incoming() {
 // ---------------------------------------------------------------------------
 // settings
 // ---------------------------------------------------------------------------
-static void back_event(lv_event_t *) { key_click(); ui_show_dialer(); }
+static void back_event(lv_event_t *) { key_click(); ui_show_face(); }
 static void reset_event(lv_event_t *) { key_click(); if (s_cb.onResetWifi) s_cb.onResetWifi(); }
 
 static void set_volm_event(lv_event_t *) { key_click(); if (s_cb.onVolume) s_cb.onVolume(-10); }
@@ -360,6 +376,114 @@ static void build_settings() {
   update_settings_volume();
   set_reset_btn = mk_pill_btn(scr_set, 170, 42, COL_ORANGE, LV_SYMBOL_WIFI " " STR_RESET_WIFI, &font_cn_18, 0, 82, reset_event);
   set_back_btn = mk_pill_btn(scr_set, 126, 40, COL_KEY, LV_SYMBOL_LEFT " " STR_BACK, &font_cn_18, 0, 128, back_event);
+}
+
+
+// ---------------------------------------------------------------------------
+// face home screen
+// ---------------------------------------------------------------------------
+static void face_tap_event(lv_event_t *) {
+  if (s_faceCall && s_cb.onHangup) { key_click(); s_cb.onHangup(); }
+}
+
+static void face_hang_event(lv_event_t *) {
+  key_click();
+  if (s_cb.onHangup) s_cb.onHangup();
+}
+
+static void face_clock_update() {
+  if (!face_clock) return;
+  time_t t = time(nullptr);
+  if (t < 1700000000) { lv_label_set_text(face_clock, "--:--"); return; }
+  struct tm ti;
+  localtime_r(&t, &ti);
+  lv_label_set_text_fmt(face_clock, "%02d:%02d", ti.tm_hour, ti.tm_min);
+}
+
+static void face_battery_update(bool force) {
+  if (!face_batt_fill) return;
+  float v = battery_volts();
+  bool present = v > 3.0f;
+  int pct = 0;
+  if (present) {
+    pct = (int)((v - 3.30f) * 100.f / 0.90f);
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+  }
+  if (!force && present && pct == s_battPct) return;
+  s_battPct = present ? pct : -1;
+  lv_obj_set_width(face_batt_fill, pct > 0 ? (pct * 30 / 100 + 2) : 0);
+  lv_obj_set_style_bg_color(face_batt_fill, lv_color_hex(pct <= 20 ? COL_RED : COL_TEXT), 0);
+  lv_obj_set_style_border_color(face_batt, lv_color_hex(present ? COL_DIM : COL_RED), 0);
+}
+
+static void face_timer_cb(lv_timer_t *) {
+  if (!s_faceBuf || lv_screen_active() != scr_face) return;
+  s_face.update(0.033f);
+  IRect rects[4];
+  int n = s_faceR.render(s_face.eyes(), s_face.brows(), rects, 4);
+  for (int i = 0; i < n; i++) {
+    lv_area_t a = { rects[i].x0, rects[i].y0, rects[i].x1 - 1, rects[i].y1 - 1 };
+    lv_obj_invalidate_area(face_canvas, &a);
+  }
+  static uint32_t lastClock = 0;
+  const uint32_t now = millis();
+  if (now - lastClock >= 1000) { lastClock = now; face_clock_update(); }
+  if (now - s_battAt > 5000) { s_battAt = now; face_battery_update(false); }
+}
+
+static void build_face() {
+  scr_face = mk_screen();
+  size_t bytes = (size_t)LCD_W * LCD_H * 2;
+  s_faceBuf = (uint16_t *)heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM);
+  if (!s_faceBuf) {
+    Serial.println("[UI] face buffer alloc failed");
+    mk_label(scr_face, "face", &font_cn_18, COL_DIM, LV_ALIGN_CENTER, 0, 0);
+    return;
+  }
+  memset(s_faceBuf, 0, bytes);
+  if (!s_faceR.begin(s_faceBuf, LCD_W, LCD_H)) Serial.println("[UI] face renderer init failed");
+  memset(&s_faceDsc, 0, sizeof(s_faceDsc));
+  s_faceDsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+  s_faceDsc.header.cf = LV_COLOR_FORMAT_RGB565;
+  s_faceDsc.header.w = LCD_W;
+  s_faceDsc.header.h = LCD_H;
+  s_faceDsc.data = (const uint8_t *)s_faceBuf;
+  s_faceDsc.data_size = bytes;
+  face_canvas = lv_image_create(scr_face);
+  lv_image_set_src(face_canvas, &s_faceDsc);
+  lv_obj_set_pos(face_canvas, 0, 0);
+  lv_obj_add_flag(face_canvas, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(face_canvas, face_tap_event, LV_EVENT_SHORT_CLICKED, NULL);
+
+  face_clock = mk_label(scr_face, "--:--", &lv_font_montserrat_24, COL_DIM, LV_ALIGN_TOP_MID, 0, 12);
+  face_batt = lv_obj_create(scr_face);
+  lv_obj_set_size(face_batt, 40, 18);
+  lv_obj_align(face_batt, LV_ALIGN_TOP_RIGHT, -16, 18);
+  lv_obj_set_style_bg_opa(face_batt, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(face_batt, 2, 0);
+  lv_obj_set_style_border_color(face_batt, lv_color_hex(COL_DIM), 0);
+  lv_obj_set_style_radius(face_batt, 4, 0);
+  lv_obj_set_style_pad_all(face_batt, 0, 0);
+  lv_obj_clear_flag(face_batt, LV_OBJ_FLAG_SCROLLABLE);
+  face_batt_fill = lv_obj_create(face_batt);
+  lv_obj_set_size(face_batt_fill, 2, 10);
+  lv_obj_align(face_batt_fill, LV_ALIGN_LEFT_MID, 2, 0);
+  lv_obj_set_style_bg_color(face_batt_fill, lv_color_hex(COL_TEXT), 0);
+  lv_obj_set_style_border_width(face_batt_fill, 0, 0);
+  lv_obj_set_style_radius(face_batt_fill, 2, 0);
+  face_charge = lv_label_create(face_batt);
+  lv_label_set_text(face_charge, LV_SYMBOL_CHARGE);
+  lv_obj_set_style_text_font(face_charge, &font_cn_18, 0);
+  lv_obj_set_style_text_color(face_charge, lv_color_hex(COL_ORANGE), 0);
+  lv_obj_align(face_charge, LV_ALIGN_CENTER, 0, 0);
+
+  face_hang = mk_round_btn(scr_face, 64, COL_RED, LV_SYMBOL_CALL, &font_cn_24, 0, 118, face_hang_event);
+  lv_obj_add_flag(face_hang, LV_OBJ_FLAG_HIDDEN);
+
+  s_face.begin();
+  s_face.setExpression(EX_LISTENING);
+  face_timer = lv_timer_create(face_timer_cb, 33, NULL);
 }
 
 // ---------------------------------------------------------------------------
@@ -398,6 +522,7 @@ void ui_init(const UiCallbacks &cb) {
   build_call();
   build_incoming();
   build_settings();
+  build_face();
   load(scr_boot, UI_BOOT);
 }
 
@@ -476,3 +601,32 @@ void ui_show_settings(const char *ip, const char *server, const char *sipState, 
 }
 
 void ui_refresh_now() { lv_refr_now(NULL); }
+
+// ---------------------------------------------------------------------------
+// face public API
+// ---------------------------------------------------------------------------
+void ui_show_face() {
+  if (!s_faceBuf) return;
+  load(scr_face, UI_FACE);
+  memset(s_faceBuf, 0, (size_t)LCD_W * LCD_H * 2);
+  s_faceR.resetDirty();
+  lv_obj_invalidate(face_canvas);
+  face_clock_update();
+  face_battery_update(true);
+}
+
+void ui_face_set_expr(int exprId) { s_face.setExpression(exprId); }
+
+void ui_face_call_active(bool active) {
+  s_faceCall = active;
+  if (!face_hang) return;
+  if (active) lv_obj_clear_flag(face_hang, LV_OBJ_FLAG_HIDDEN);
+  else lv_obj_add_flag(face_hang, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_face_levels(uint8_t mic, uint8_t spk) {
+  if (ui_screen() != UI_FACE) return;
+  if (spk > 8) s_face.setExpression(EX_SPEAKING);
+  else if (mic > 12) s_face.setExpression(EX_USER_SPEAKING);
+  else s_face.setExpression(EX_LISTENING);
+}
