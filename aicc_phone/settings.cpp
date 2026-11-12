@@ -26,15 +26,21 @@ void Settings::load() {
   refDelayMs = p.getUShort("rdelay", DEF_REF_DELAY_MS);
   aecFilter = p.getUChar("afilt", DEF_AEC_FILTER);
   refGain = p.getUChar("rgain", DEF_REF_GAIN);
+  micPga = p.getUChar("mpga", DEF_MIC_PGA);
+  refDigGain = p.getUChar("rdig", DEF_REF_DIG_GAIN);
+  resSuppress = p.getBool("rsup", DEF_RES_SUPPRESS);
   p.end();
   if (cfgv < AUDIO_CFG_VERSION) {
     // audio tuning defaults changed in this firmware: discard the stored ones
     aecMode = DEF_AEC_MODE; micSlot = DEF_MIC_SLOT; refSlot = DEF_REF_SLOT;
     refDelayMs = DEF_REF_DELAY_MS; aecFilter = DEF_AEC_FILTER; refGain = DEF_REF_GAIN;
+    micPga = DEF_MIC_PGA; refDigGain = DEF_REF_DIG_GAIN; resSuppress = DEF_RES_SUPPRESS; micGain = DEF_MIC_GAIN;
     save();
   }
   if (aecMode > 3) aecMode = 1;
   if (refGain > 14) refGain = DEF_REF_GAIN;
+  if (micPga > 14) micPga = DEF_MIC_PGA;
+  if (refDigGain < 1 || refDigGain > 8) refDigGain = DEF_REF_DIG_GAIN;
   if (micSlot > 3) micSlot = DEF_MIC_SLOT;
   if (refSlot > 4) refSlot = DEF_REF_SLOT;
   if (refDelayMs > 400) refDelayMs = DEF_REF_DELAY_MS;
@@ -65,6 +71,9 @@ void Settings::save() {
   p.putUShort("rdelay", refDelayMs);
   p.putUChar("afilt", aecFilter);
   p.putUChar("rgain", refGain);
+  p.putUChar("mpga", micPga);
+  p.putUChar("rdig", refDigGain);
+  p.putBool("rsup", resSuppress);
   p.putUChar("cfgv", AUDIO_CFG_VERSION);
   p.end();
 }

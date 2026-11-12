@@ -19,6 +19,9 @@ struct Settings {
   uint16_t refDelayMs; // software reference delay
   uint8_t aecFilter;   // esp-sr filter_length
   uint8_t refGain;     // ES7210 reference PGA gain code
+  uint8_t micPga;      // ES7210 MIC1/2 PGA gain code
+  uint8_t refDigGain;  // software reference gain x1..x8
+  bool resSuppress;    // residual echo suppression
 
   void load();
   void save();

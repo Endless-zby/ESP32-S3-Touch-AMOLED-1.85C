@@ -22,6 +22,9 @@ void audio_set_slots(uint8_t micSlot, uint8_t refSlot); // V2: mic TDM slot 0..3
 void audio_set_ref_delay(uint16_t ms);     // software reference delay
 void audio_set_aec_filter(uint8_t n);      // esp-sr filter_length (echo tail = n x 16 ms)
 void audio_set_ref_gain(uint8_t code);     // ES7210 reference-channel PGA gain code 0..14 (10 = 30 dB)
+void audio_set_mic_pga(uint8_t code);      // ES7210 MIC1/MIC2 PGA gain code 0..14
+void audio_set_ref_dig_gain(uint8_t x);    // software gain on the reference (x1..x8)
+void audio_set_res_suppress(bool on);      // residual echo suppression after the AEC
 void audio_set_mute(bool mute);
 bool audio_is_muted();
 void audio_click();                       // short key click

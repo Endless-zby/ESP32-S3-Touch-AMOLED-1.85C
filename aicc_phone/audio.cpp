@@ -38,6 +38,9 @@ static volatile uint8_t s_refSlot = 4;      // 0..3 = TDM slot with the DAC loop
 static volatile uint16_t s_refDelayMs = DEF_REF_DELAY_MS;  // software reference delay
 static volatile uint8_t s_aecFilter = DEF_AEC_FILTER;      // esp-sr filter_length
 static volatile uint8_t s_refGain = DEF_REF_GAIN;          // ES7210 MIC3 (reference) PGA gain code
+static volatile uint8_t s_micPga = DEF_MIC_PGA;            // ES7210 MIC1/MIC2 PGA gain code
+static volatile uint8_t s_refDigGain = DEF_REF_DIG_GAIN;   // software reference gain
+static volatile bool s_resSuppress = DEF_RES_SUPPRESS;
 static bool s_codecReady = false;
 static volatile uint8_t s_slotLevel[4] = {0, 0, 0, 0};
 static volatile uint8_t s_micLevel = 0, s_spkLevel = 0;
@@ -68,7 +71,7 @@ bool audio_init() {
   es8311_microphone_config(s_es8311, false);
 
   // ES7210: four ADCs in TDM, programmed like esp_codec_dev (xiaozhi-esp32).
-  if (!es7210_board_init(AUDIO_HW_RATE, 10 /*30 dB mics*/, s_refGain)) {
+  if (!es7210_board_init(AUDIO_HW_RATE, s_micPga, s_refGain)) {
     Serial.println("[AUDIO] es7210 init failed");
     return false;
   }
@@ -122,6 +125,14 @@ void audio_set_ref_gain(uint8_t code) {
   if (s_codecReady) es7210_board_set_gain(3, s_refGain);
 #endif
 }
+void audio_set_mic_pga(uint8_t code) {
+  s_micPga = code > 14 ? 14 : code;
+#if BOARD_V2
+  if (s_codecReady) { es7210_board_set_gain(1, s_micPga); es7210_board_set_gain(2, s_micPga); }
+#endif
+}
+void audio_set_ref_dig_gain(uint8_t x) { s_refDigGain = x < 1 ? 1 : (x > 8 ? 8 : x); }
+void audio_set_res_suppress(bool on) { s_resSuppress = on; }
 uint8_t audio_aec_mode() { return s_aecMode; }
 void audio_set_mute(bool m) { s_mute = m; }
 bool audio_is_muted() { return s_mute; }
@@ -470,6 +481,8 @@ static void audio_task(void *) {
   // 2 s window statistics (peak of per-frame peaks)
   uint8_t wSlot[4] = {0, 0, 0, 0}, wMic = 0, wOut = 0, wRef = 0, wSpk = 0;
   uint16_t wFrames = 0, wFarActive = 0, wNearOut = 0;   // frames with speaker active / with AEC output > 5%
+  uint32_t farHold = 0;      // ms since the far end was last active (counts down)
+  uint16_t resFrames = 0;    // frames attenuated by the residual suppressor in this window
 
   for (;;) {
     AudioMode m = s_mode;
@@ -525,13 +538,28 @@ static void audio_task(void *) {
         // software reference: what we played s_refDelayMs ago
         hist_fetch(s_playHist16, PLAY_HIST_16K, s_playPos16, (int)s_refDelayMs * AUDIO_HW_RATE / 1000, ref16, FRAME_16K);
       }
+      if (s_refDigGain > 1) {
+        int32_t g = s_refDigGain;
+        for (int i = 0; i < FRAME_16K; i++) ref16[i] = sat16((int32_t)ref16[i] * g);
+      }
+      refLevel = level_of(ref16, FRAME_16K);
+      rawMicLevel = level_of(mic16, FRAME_16K);
       if (s_aec.active()) {
         if (s_aec.process(mic16, ref16, clean16)) src = clean16;
         else memset(clean16, 0, sizeof(clean16)), src = clean16;  // priming: send silence for the first chunk
         aecUsed = true;
+        // Residual echo suppression: while the far end is active and the AEC
+        // removed most of the microphone energy, what is left is echo tail /
+        // nonlinear residue rather than near-end speech. Near-end speech on top
+        // of the echo raises the out/mic ratio and passes through.
+        if (s_resSuppress && farHold > 0) {
+          uint8_t outLv = level_of(clean16, FRAME_16K);
+          if (rawMicLevel > 8 && outLv * 3 < rawMicLevel) {
+            for (int i = 0; i < FRAME_16K; i++) clean16[i] = clean16[i] / 4;   // -12 dB
+            resFrames++;
+          }
+        }
       }
-      refLevel = level_of(ref16, FRAME_16K);
-      rawMicLevel = level_of(mic16, FRAME_16K);
       for (int k = 0; k < 4; k++) if (s_slotLevel[k] > wSlot[k]) wSlot[k] = s_slotLevel[k];
       if (rawMicLevel > wMic) wMic = rawMicLevel;
       if (refLevel > wRef) wRef = refLevel;
@@ -562,10 +590,12 @@ static void audio_task(void *) {
         if (s_spkLevel > 5) wFarActive++;
 #endif
         if (s_spkLevel > 6) echoHold = 160; else if (echoHold >= FRAME_MS) echoHold -= FRAME_MS; else echoHold = 0;
+        if (s_spkLevel > 4) farHold = 300; else if (farHold >= FRAME_MS) farHold -= FRAME_MS; else farHold = 0;
         upsample(spk8, spk16, usPrev);
       } else {
         s_spkLevel = 0;
         if (echoHold >= FRAME_MS) echoHold -= FRAME_MS; else echoHold = 0;
+        if (farHold >= FRAME_MS) farHold -= FRAME_MS; else farHold = 0;
         memset(spk16, 0, sizeof(spk16));
         usPrev = 0;
       }
@@ -591,17 +621,18 @@ static void audio_task(void *) {
       if (now - lastStat > 2000) {
         lastStat = now;
         if (s_aec.active() && s_aec.procCount) {
-          Serial.printf("[AEC] %lu/%lu us  peak2s slots=[%u %u %u %u] mic(s%u)=%u out=%u ref=%u spk=%u  far=%u%% out>5=%u%% lag=%dms corr=%.2f\n",
+          Serial.printf("[AEC] %lu/%lu us  peak2s slots=[%u %u %u %u] mic(s%u)=%u out=%u ref=%u spk=%u  far=%u%% out>5=%u%% res=%u%% lag=%dms corr=%.2f\n",
                         (unsigned long)(s_aec.procUs / s_aec.procCount), (unsigned long)s_aec.procMaxUs,
                         wSlot[0], wSlot[1], wSlot[2], wSlot[3], s_micSlot, wMic, wOut, wRef, wSpk,
-                        wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? wNearOut * 100 / wFrames : 0, lagMs, lagCorr);
+                        wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? wNearOut * 100 / wFrames : 0,
+                        wFrames ? resFrames * 100 / wFrames : 0, lagMs, lagCorr);
           s_aec.procUs = 0; s_aec.procCount = 0; s_aec.procMaxUs = 0;
         } else {
           Serial.printf("[AUDIO] peak2s slots=[%u %u %u %u] mic(s%u)=%u out=%u ref=%u spk=%u far=%u%% out>5=%u%% lag=%dms corr=%.2f (aec off)\n",
                         wSlot[0], wSlot[1], wSlot[2], wSlot[3], s_micSlot, wMic, wOut, wRef, wSpk,
                         wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? wNearOut * 100 / wFrames : 0, lagMs, lagCorr);
         }
-        memset(wSlot, 0, sizeof(wSlot)); wMic = wOut = wRef = wSpk = 0; wFrames = wFarActive = wNearOut = 0;
+        memset(wSlot, 0, sizeof(wSlot)); wMic = wOut = wRef = wSpk = 0; wFrames = wFarActive = wNearOut = 0; resFrames = 0;
       }
 #endif
       continue;

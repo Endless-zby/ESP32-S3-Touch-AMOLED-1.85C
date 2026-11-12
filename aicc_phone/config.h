@@ -70,14 +70,17 @@
 #define DEF_DISPLAY_NAME "ESP32 Phone"
 #define DEF_SIP_REGISTER 0
 #define DEF_VOLUME       75
-#define DEF_MIC_GAIN     100
+#define DEF_MIC_GAIN     150     // digital mic gain (%) applied after AEC
 #define DEF_AEC_MODE     1       // 0 off, 1 esp-sr FD low cost (xiaozhi default), 2 VoIP high perf, 3 FD high perf
 #define DEF_MIC_SLOT     0       // V2: ES7210 TDM slot used as the voice microphone
 #define DEF_REF_SLOT     1       // V2: ES7210 TDM slot with the DAC loopback (MIC3), 4 = software reference
 #define DEF_REF_DELAY_MS 40      // software reference delay (tune with the lag= value in the serial log)
 #define DEF_AEC_FILTER   4       // esp-sr AEC filter_length (echo tail ~ n x 16 ms)
 #define DEF_REF_GAIN     14      // ES7210 MIC3 PGA gain code (14 = 37.5 dB; the on-board attenuator is ~-24 dB)
-#define AUDIO_CFG_VERSION 3      // bump to reset the audio tuning fields stored in NVS
+#define DEF_MIC_PGA      6       // ES7210 MIC1/MIC2 PGA gain code (6 = 18 dB). 30 dB clipped on speaker echo.
+#define DEF_REF_DIG_GAIN 4       // software gain on the reference channel before the AEC (x1..x8)
+#define DEF_RES_SUPPRESS 1       // residual echo suppression after the AEC while the far end is talking
+#define AUDIO_CFG_VERSION 4      // bump to reset the audio tuning fields stored in NVS
 #define SIP_LOCAL_PORT   5060
 #define RTP_LOCAL_PORT   20000
 

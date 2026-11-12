@@ -321,6 +321,9 @@ void setup() {
   ui_boot_status(STR_INIT_AUDIO);
   ui_refresh_now();
   audio_set_ref_gain(g_settings.refGain);   // before init: picked up by es7210_board_init()
+  audio_set_mic_pga(g_settings.micPga);
+  audio_set_ref_dig_gain(g_settings.refDigGain);
+  audio_set_res_suppress(g_settings.resSuppress);
   g_audioOk = audio_init();
   audio_set_volume(g_settings.volume);
   audio_set_mic_gain(g_settings.micGain);
