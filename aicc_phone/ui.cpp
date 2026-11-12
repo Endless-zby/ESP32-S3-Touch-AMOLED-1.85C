@@ -525,7 +525,7 @@ static void build_face() {
   face_clock = mk_label(scr_face, "--:--", &lv_font_montserrat_24, COL_DIM, LV_ALIGN_TOP_MID, 0, 12);
   face_batt = lv_obj_create(scr_face);
   lv_obj_set_size(face_batt, 40, 18);
-  lv_obj_align(face_batt, LV_ALIGN_TOP_RIGHT, -16, 18);
+  lv_obj_align(face_batt, LV_ALIGN_BOTTOM_MID, -28, -30);   // bottom centre: the corners are outside the round glass
   lv_obj_set_style_bg_opa(face_batt, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(face_batt, 2, 0);
   lv_obj_set_style_border_color(face_batt, lv_color_hex(COL_DIM), 0);
@@ -538,7 +538,7 @@ static void build_face() {
   lv_obj_set_style_bg_color(face_batt_fill, lv_color_hex(COL_TEXT), 0);
   lv_obj_set_style_border_width(face_batt_fill, 0, 0);
   lv_obj_set_style_radius(face_batt_fill, 2, 0);
-  face_batt_pct = mk_label(scr_face, "--", &font_cn_18, COL_DIM, LV_ALIGN_TOP_RIGHT, -64, 14);
+  face_batt_pct = mk_label(scr_face, "--", &font_cn_18, COL_DIM, LV_ALIGN_BOTTOM_MID, 26, -30);
   face_charge = lv_label_create(face_batt);
   lv_label_set_text(face_charge, LV_SYMBOL_CHARGE);
   lv_obj_set_style_text_font(face_charge, &font_cn_18, 0);
