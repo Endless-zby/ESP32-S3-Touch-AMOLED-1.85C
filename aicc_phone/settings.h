@@ -14,6 +14,10 @@ struct Settings {
   uint8_t volume;      // 0..100
   uint8_t micGain;     // 0..200 (%)
   uint8_t aecMode;     // 0 off, 1 low cost, 2 high performance
+  uint8_t micSlot;     // V2: TDM slot of the voice mic (0..3)
+  uint8_t refSlot;     // V2: 0..3 TDM slot, 4 = software reference
+  uint16_t refDelayMs; // software reference delay
+  uint8_t aecFilter;   // esp-sr filter_length
 
   void load();
   void save();

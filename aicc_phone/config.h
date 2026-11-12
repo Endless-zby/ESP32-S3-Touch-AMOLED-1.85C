@@ -72,6 +72,10 @@
 #define DEF_VOLUME       75
 #define DEF_MIC_GAIN     100
 #define DEF_AEC_MODE     2       // 0 off, 1 esp-sr VOIP low cost, 2 esp-sr VOIP high performance
+#define DEF_MIC_SLOT     0       // V2: ES7210 TDM slot used as the voice microphone
+#define DEF_REF_SLOT     4       // V2: 0..3 = ES7210 TDM slot with the DAC loopback, 4 = software reference
+#define DEF_REF_DELAY_MS 40      // software reference delay (tune with the lag= value in the serial log)
+#define DEF_AEC_FILTER   6       // esp-sr AEC filter_length (echo tail ~ n x 16 ms)
 #define SIP_LOCAL_PORT   5060
 #define RTP_LOCAL_PORT   20000
 

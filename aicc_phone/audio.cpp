@@ -14,14 +14,15 @@ static es8311_handle_t s_es8311 = NULL;
 static es7210_dev_handle_t s_es7210 = NULL;
 #endif
 
-// V2 bus layout (one I2S port, 16 kHz, 16-bit stereo, 32 BCLK per frame):
-//   TX  : L = R = speaker sample                 -> ES8311 DAC
-//   RX  : L = MIC1 (voice), R = MIC3 (echo reference) <- ES7210 in TDM mode
-// The ES7210 emits its channels in the order MIC1, MIC3, MIC2, MIC4 when TDM is
-// enabled, and a standard stereo frame only has room for the first two, so the
-// right channel carries MIC3. On this board MIC3 is wired to the ES8311 line
-// output through an attenuator (see the "AEC" block of the V2 schematic), which
-// gives the echo canceller an exact copy of what the speaker is playing.
+// V2 bus layout (one I2S port, 16 kHz, 32-bit stereo => 64 BCLK per frame):
+//   TX  : L = R = speaker sample in the top 16 bits   -> ES8311 DAC (32-bit mode)
+//   RX  : ES7210 in 1xFS TDM mode packs four 16-bit ADC words into the 64-bit
+//         frame: slot0 = L[31:16], slot1 = L[15:0], slot2 = R[31:16], slot3 = R[15:0]
+// On this board MIC3 is wired to the ES8311 line output through an attenuator
+// (see the "AEC" block of the V2 schematic): that slot is the echo reference.
+// Which slot carries which ADC is selected at runtime (s_micSlot / s_refSlot)
+// because the TDM ordering differs between documentation and silicon; the
+// per-slot levels are printed on the serial console during a call.
 static I2SClass s_i2s;       // V2: full duplex; V1: speaker
 #if !BOARD_V2
 static I2SClass s_i2s_mic;   // V1: MEMS mic on a second port
@@ -33,6 +34,11 @@ static volatile bool s_click = false;
 static volatile uint8_t s_volume = DEF_VOLUME;
 static volatile uint8_t s_micGain = DEF_MIC_GAIN;
 static volatile uint8_t s_aecMode = DEF_AEC_MODE;
+static volatile uint8_t s_micSlot = 0;      // TDM slot carrying the voice microphone (0..3)
+static volatile uint8_t s_refSlot = 4;      // 0..3 = TDM slot with the DAC loopback, 4 = software reference (our own playback)
+static volatile uint16_t s_refDelayMs = DEF_REF_DELAY_MS;  // software reference delay
+static volatile uint8_t s_aecFilter = DEF_AEC_FILTER;      // esp-sr filter_length
+static volatile uint8_t s_slotLevel[4] = {0, 0, 0, 0};
 static volatile uint8_t s_micLevel = 0, s_spkLevel = 0;
 static RtpSession *s_rtp = NULL;
 static TaskHandle_t s_task = NULL;
@@ -53,7 +59,7 @@ bool audio_init() {
   clk.mclk_from_mclk_pin = true;
   clk.mclk_frequency = AUDIO_HW_RATE * 256;
   clk.sample_frequency = AUDIO_HW_RATE;
-  if (es8311_init(s_es8311, &clk, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16) != ESP_OK) {
+  if (es8311_init(s_es8311, &clk, ES8311_RESOLUTION_32, ES8311_RESOLUTION_32) != ESP_OK) {
     Serial.println("[AUDIO] es8311 init failed");
     return false;
   }
@@ -83,7 +89,7 @@ bool audio_init() {
 
   s_i2s.setPins(PIN_I2S_BCLK, PIN_I2S_LRCK, PIN_I2S_DOUT, PIN_I2S_DIN, PIN_I2S_MCLK);
   s_i2s.setTimeout(100);
-  if (!s_i2s.begin(I2S_MODE_STD, AUDIO_HW_RATE, I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO)) {
+  if (!s_i2s.begin(I2S_MODE_STD, AUDIO_HW_RATE, I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO)) {
     Serial.println("[AUDIO] i2s begin failed");
     return false;
   }
@@ -120,6 +126,9 @@ void audio_set_volume(uint8_t percent) {
 
 void audio_set_mic_gain(uint8_t percent) { s_micGain = percent; }
 void audio_set_aec_mode(uint8_t mode) { s_aecMode = mode; }
+void audio_set_slots(uint8_t micSlot, uint8_t refSlot) { s_micSlot = micSlot & 3; s_refSlot = refSlot > 4 ? 4 : refSlot; }
+void audio_set_ref_delay(uint16_t ms) { s_refDelayMs = ms > 400 ? 400 : ms; }
+void audio_set_aec_filter(uint8_t n) { s_aecFilter = n < 1 ? 1 : (n > 16 ? 16 : n); }
 uint8_t audio_aec_mode() { return s_aecMode; }
 void audio_set_mute(bool m) { s_mute = m; }
 bool audio_is_muted() { return s_mute; }
@@ -239,7 +248,7 @@ struct Aec {
     cfg.mic_num = 1;
     cfg.ref_num = 1;
     cfg.out_num = 1;
-    cfg.filter_length = 4;
+    cfg.filter_length = s_aecFilter;
     cfg.sample_rate = AUDIO_HW_RATE;
     cfg.caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;   // keep internal RAM for WiFi/lwIP
     cfg.mode = am;
@@ -256,7 +265,8 @@ struct Aec {
     if (!bufMic || !bufRef || !bufOut) { stop(); return false; }
     mode = m;
     procUs = procMaxUs = procCount = 0;
-    Serial.printf("[AEC] started mode=%d chunk=%d free=%u psram=%u\n", m, chunk, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
+    Serial.printf("[AEC] started mode=%d filter=%d chunk=%d ref=%s delay=%ums free=%u psram=%u\n", m, (int)s_aecFilter, chunk,
+                  s_refSlot == 4 ? "software" : "hw-slot", (unsigned)s_refDelayMs, (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
     return true;
   }
   void stop() {
@@ -289,24 +299,91 @@ struct Aec {
   }
 };
 static Aec s_aec;
+
+#ifndef AEC_SELFTEST
+#define AEC_SELFTEST 0
+#endif
+#if AEC_SELFTEST
+// Boot-time self test with synthetic signals: tells us how aec_process()
+// interprets its buffers on this library build.
+//   A: mic = 1 kHz tone, ref = silence      -> expect output ~= input
+//   B: mic = 1 kHz tone, ref = same tone    -> expect output -> 0 after adaptation
+//   C: mic = tone, ref = silence, buffers passed as interleaved [mic,ref] pairs
+static void aec_selftest() {
+  aec_config_t cfg = {};
+  cfg.mic_num = 1; cfg.ref_num = 1; cfg.out_num = 1; cfg.filter_length = 4;
+  cfg.sample_rate = AUDIO_HW_RATE; cfg.caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+  cfg.mode = AEC_MODE_VOIP_HIGH_PERF; cfg.nlp_level = AEC_NLP_LEVEL_AGGR;
+  aec_handle_t *h = aec_create_from_config(&cfg);
+  if (!h) { Serial.println("[AEC-TEST] create failed"); return; }
+  int n = aec_get_chunksize(h);
+  int16_t *mic = (int16_t *)heap_caps_malloc(n * 2 * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  int16_t *ref = (int16_t *)heap_caps_malloc(n * 2 * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  int16_t *out = (int16_t *)heap_caps_malloc(n * 2 * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  if (!mic || !ref || !out) { aec_destroy(h); return; }
+  float ph = 0;
+  auto fill = [&](int16_t *d, int cnt, bool tone) {
+    for (int i = 0; i < cnt; i++) { d[i] = tone ? (int16_t)(8000 * sinf(ph)) : 0; ph += 2 * (float)M_PI * 1000 / AUDIO_HW_RATE; }
+  };
+  Serial.printf("[AEC-TEST] chunk=%d frame_size=%d\n", n, h->frame_size);
+  for (int pass = 0; pass < 3; pass++) {
+    uint8_t lvl = 0;
+    for (int k = 0; k < 40; k++) {
+      if (pass == 0) { fill(mic, n, true); memset(ref, 0, n * 2); }
+      else if (pass == 1) { fill(mic, n, true); memcpy(ref, mic, n * 2); }
+      else {  // interleaved [mic, ref] in one buffer, ref = 0
+        for (int i = 0; i < n; i++) { mic[2 * i] = (int16_t)(8000 * sinf(ph)); mic[2 * i + 1] = 0; ph += 2 * (float)M_PI * 1000 / AUDIO_HW_RATE; }
+        memset(ref, 0, n * 2);
+      }
+      aec_process(h, mic, ref, out);
+      lvl = level_of(out, n);
+    }
+    Serial.printf("[AEC-TEST] pass %c (%s) -> out level %u%% (input 24%%)\n", 'A' + pass,
+                  pass == 0 ? "mic tone, ref silent" : pass == 1 ? "mic tone, ref = same tone" : "interleaved buffer, ref silent", lvl);
+  }
+  free(mic); free(ref); free(out);
+  aec_destroy(h);
+}
+#endif  // AEC_SELFTEST
 #endif
 
 // ---------------------------------------------------------------------------
 // Audio task: paced by the I2S DMA (20 ms per iteration)
 // ---------------------------------------------------------------------------
+#if BOARD_V2
+static void write_stereo(const int16_t *mono16) {
+  static int32_t st[FRAME_16K * 2];
+  for (int i = 0; i < FRAME_16K; i++) {
+    int32_t v = ((int32_t)mono16[i]) << 16;
+    st[2 * i] = v;
+    st[2 * i + 1] = v;
+  }
+  s_i2s.write((uint8_t *)st, sizeof(st));
+}
+#else
 static void write_stereo(const int16_t *mono16) {
   static int16_t st[FRAME_16K * 2];
   for (int i = 0; i < FRAME_16K; i++) { st[2 * i] = mono16[i]; st[2 * i + 1] = mono16[i]; }
   s_i2s.write((uint8_t *)st, sizeof(st));
 }
+#endif
 
 // Reads one frame. mono16 = microphone, ref16 = echo reference (V2) or zeros.
 static bool read_mic(int16_t *mono16, int16_t *ref16) {
 #if BOARD_V2
-  static int16_t st[FRAME_16K * 2];
+  static int32_t st[FRAME_16K * 2];
   size_t got = s_i2s.readBytes((char *)st, sizeof(st));
   if (got < sizeof(st)) { memset(mono16, 0, FRAME_16K * 2); memset(ref16, 0, FRAME_16K * 2); return false; }
-  for (int i = 0; i < FRAME_16K; i++) { mono16[i] = st[2 * i]; ref16[i] = st[2 * i + 1]; }
+  const uint8_t ms = s_micSlot, rs = s_refSlot < 4 ? s_refSlot : ms;
+  int32_t peak[4] = {0, 0, 0, 0};
+  for (int i = 0; i < FRAME_16K; i++) {
+    uint32_t l = (uint32_t)st[2 * i], r = (uint32_t)st[2 * i + 1];
+    int16_t slot[4] = {(int16_t)(l >> 16), (int16_t)(l & 0xFFFF), (int16_t)(r >> 16), (int16_t)(r & 0xFFFF)};
+    mono16[i] = slot[ms];
+    ref16[i] = slot[rs];   // overwritten by the software reference when s_refSlot == 4
+    for (int k = 0; k < 4; k++) { int32_t a = slot[k] < 0 ? -slot[k] : slot[k]; if (a > peak[k]) peak[k] = a; }
+  }
+  for (int k = 0; k < 4; k++) { uint32_t lv = (uint32_t)peak[k] * 100 / 32767; s_slotLevel[k] = lv > 100 ? 100 : lv; }
   return true;
 #else
   static int32_t raw[FRAME_16K];
@@ -318,17 +395,71 @@ static bool read_mic(int16_t *mono16, int16_t *ref16) {
 #endif
 }
 
+#if BOARD_V2
+// History of what we played (16 kHz) for the software echo reference, and 8 kHz
+// copies of playback / raw microphone for the echo-lag estimator.
+#define PLAY_HIST_16K (AUDIO_HW_RATE / 2)      // 500 ms
+#define PLAY_HIST_8K  (RTP_RATE / 2)           // 500 ms
+#define MIC_HIST_8K   (RTP_RATE / 10)          // 100 ms
+static int16_t s_playHist16[PLAY_HIST_16K];
+static int16_t s_playHist8[PLAY_HIST_8K];
+static int16_t s_micHist8[MIC_HIST_8K];
+static int s_playPos16 = 0, s_playPos8 = 0, s_micPos8 = 0;
+
+static void hist_push(int16_t *buf, int cap, int &pos, const int16_t *src, int n) {
+  for (int i = 0; i < n; i++) { buf[pos] = src[i]; pos = (pos + 1) % cap; }
+}
+// Fetch `n` samples that were pushed `delaySamples` + n .. `delaySamples` ago.
+static void hist_fetch(const int16_t *buf, int cap, int pos, int delaySamples, int16_t *dst, int n) {
+  int start = pos - delaySamples - n;
+  while (start < 0) start += cap;
+  for (int i = 0; i < n; i++) { dst[i] = buf[start]; start = (start + 1) % cap; }
+}
+
+// Normalised cross-correlation between the last 100 ms of raw microphone and
+// the playback history, over lags 0..maxLagMs. Returns best lag in ms, writes
+// correlation coefficient (0..1) to *corr.
+static int estimate_echo_lag(float *corr) {
+  const int n = MIC_HIST_8K;
+  static int16_t mic[MIC_HIST_8K];
+  hist_fetch(s_micHist8, MIC_HIST_8K, s_micPos8, 0, mic, n);
+  double micE = 0;
+  for (int i = 0; i < n; i++) micE += (double)mic[i] * mic[i];
+  if (micE < 1e4) { *corr = 0; return -1; }
+  const int maxLagMs = 350;
+  int bestLag = -1;
+  double best = 0;
+  static int16_t play[MIC_HIST_8K];
+  for (int lag = 0; lag <= maxLagMs; lag += 2) {
+    hist_fetch(s_playHist8, PLAY_HIST_8K, s_playPos8, lag * RTP_RATE / 1000, play, n);
+    double dot = 0, pe = 0;
+    for (int i = 0; i < n; i++) { dot += (double)mic[i] * play[i]; pe += (double)play[i] * play[i]; }
+    if (pe < 1e4) continue;
+    double c = fabs(dot) / sqrt(micE * pe);
+    if (c > best) { best = c; bestLag = lag; }
+  }
+  *corr = (float)best;
+  return bestLag;
+}
+#endif
+
 static void audio_task(void *) {
   static int16_t mic16[FRAME_16K], ref16[FRAME_16K], clean16[FRAME_16K], mic8[FRAME_8K];
   static int16_t spk8[FRAME_8K], spk16[FRAME_16K];
   static int16_t silence16[FRAME_16K] = {0};
+#if BOARD_V2
+  static int16_t rawmic8[FRAME_8K];
+  int16_t dsHistRaw = 0;
+  uint32_t lastLag = 0;
+  int lagMs = -1; float lagCorr = 0;
+#endif
   int16_t dsHist = 0, usPrev = 0;
   ToneGen tone;
   AudioMode last = AUDIO_IDLE;
   uint32_t echoHold = 0;       // ms of mic attenuation remaining after speaker activity (fallback when AEC is off)
   int clickFrames = 0;
   uint32_t lastStat = 0;
-  uint8_t refLevel = 0;
+  uint8_t refLevel = 0, rawMicLevel = 0;
 
   for (;;) {
     AudioMode m = s_mode;
@@ -343,6 +474,10 @@ static void audio_task(void *) {
       }
 #if BOARD_V2
       if (m == AUDIO_CALL) {
+        memset(s_playHist16, 0, sizeof(s_playHist16));
+        memset(s_playHist8, 0, sizeof(s_playHist8));
+        memset(s_micHist8, 0, sizeof(s_micHist8));
+        s_playPos16 = s_playPos8 = s_micPos8 = 0;
         if (s_aecMode != 0) s_aec.start(s_aecMode);
       } else if (s_aec.active()) {
         s_aec.stop();
@@ -373,12 +508,20 @@ static void audio_task(void *) {
       const int16_t *src = mic16;
       bool aecUsed = false;
 #if BOARD_V2
+      // raw microphone at 8 kHz for the lag estimator
+      downsample(mic16, rawmic8, dsHistRaw);
+      hist_push(s_micHist8, MIC_HIST_8K, s_micPos8, rawmic8, FRAME_8K);
+      if (s_refSlot == 4) {
+        // software reference: what we played s_refDelayMs ago
+        hist_fetch(s_playHist16, PLAY_HIST_16K, s_playPos16, (int)s_refDelayMs * AUDIO_HW_RATE / 1000, ref16, FRAME_16K);
+      }
       if (s_aec.active()) {
         if (s_aec.process(mic16, ref16, clean16)) src = clean16;
         else memset(clean16, 0, sizeof(clean16)), src = clean16;  // priming: send silence for the first chunk
         aecUsed = true;
       }
       refLevel = level_of(ref16, FRAME_16K);
+      rawMicLevel = level_of(mic16, FRAME_16K);
 #endif
       downsample(src, mic8, dsHist);
       int32_t g = s_micGain;  // percent
@@ -405,19 +548,36 @@ static void audio_task(void *) {
         usPrev = 0;
       }
       if (clickFrames > 0) { tone.fill(spk16, 1200, 0, 1000, 0, 5000); clickFrames--; }
+#if BOARD_V2
+      hist_push(s_playHist16, PLAY_HIST_16K, s_playPos16, spk16, FRAME_16K);
+      {
+        static int16_t h8 = 0;
+        static int16_t p8[FRAME_8K];
+        downsample(spk16, p8, h8);
+        hist_push(s_playHist8, PLAY_HIST_8K, s_playPos8, p8, FRAME_8K);
+      }
+#endif
       write_stereo(spk16);
 
 #if BOARD_V2
       uint32_t now = millis();
-      if (now - lastStat > 5000) {
+      if (now - lastLag > 3000) {
+        lastLag = now;
+        // only meaningful while the far end is talking
+        if (s_spkLevel > 5) lagMs = estimate_echo_lag(&lagCorr); else { lagMs = -1; lagCorr = 0; }
+      }
+      if (now - lastStat > 2000) {
         lastStat = now;
         if (s_aec.active() && s_aec.procCount) {
-          Serial.printf("[AEC] avg %lu us / chunk(%d) max %lu us  mic=%u ref=%u spk=%u\n",
-                        (unsigned long)(s_aec.procUs / s_aec.procCount), s_aec.chunk,
-                        (unsigned long)s_aec.procMaxUs, s_micLevel, refLevel, s_spkLevel);
+          Serial.printf("[AEC] avg %lu us / chunk(%d) max %lu us  slots=[%u %u %u %u] mic(s%u)=%u aecout=%u ref=%u spk=%u lag=%dms corr=%.2f\n",
+                        (unsigned long)(s_aec.procUs / s_aec.procCount), s_aec.chunk, (unsigned long)s_aec.procMaxUs,
+                        s_slotLevel[0], s_slotLevel[1], s_slotLevel[2], s_slotLevel[3],
+                        s_micSlot, rawMicLevel, s_micLevel, refLevel, s_spkLevel, lagMs, lagCorr);
           s_aec.procUs = 0; s_aec.procCount = 0; s_aec.procMaxUs = 0;
         } else {
-          Serial.printf("[AUDIO] mic=%u ref=%u spk=%u (aec off)\n", s_micLevel, refLevel, s_spkLevel);
+          Serial.printf("[AUDIO] slots=[%u %u %u %u] mic(s%u)=%u out=%u ref=%u spk=%u lag=%dms corr=%.2f (aec off)\n",
+                        s_slotLevel[0], s_slotLevel[1], s_slotLevel[2], s_slotLevel[3],
+                        s_micSlot, rawMicLevel, s_micLevel, refLevel, s_spkLevel, lagMs, lagCorr);
         }
       }
 #endif
@@ -440,6 +600,9 @@ static void audio_task(void *) {
 
 void audio_start_task(RtpSession *rtp) {
   s_rtp = rtp;
+#if BOARD_V2 && AEC_SELFTEST
+  aec_selftest();
+#endif
   if (s_task) return;
   // Core 1: away from the WiFi/lwIP stack on core 0. LVGL (loop()) also runs on
   // core 1 but at a lower priority, so the 20 ms audio cadence is never starved.

@@ -20,8 +20,16 @@ void Settings::load() {
   volume = p.getUChar("vol", DEF_VOLUME);
   micGain = p.getUChar("mic", DEF_MIC_GAIN);
   aecMode = p.getUChar("aec", DEF_AEC_MODE);
+  micSlot = p.getUChar("mslot", DEF_MIC_SLOT);
+  refSlot = p.getUChar("rslot2", DEF_REF_SLOT);
+  refDelayMs = p.getUShort("rdelay", DEF_REF_DELAY_MS);
+  aecFilter = p.getUChar("afilt", DEF_AEC_FILTER);
   p.end();
   if (aecMode > 2) aecMode = 2;
+  if (micSlot > 3) micSlot = DEF_MIC_SLOT;
+  if (refSlot > 4) refSlot = DEF_REF_SLOT;
+  if (refDelayMs > 400) refDelayMs = DEF_REF_DELAY_MS;
+  if (aecFilter < 1 || aecFilter > 16) aecFilter = DEF_AEC_FILTER;
   if (sipServer.length() == 0) sipServer = DEF_SIP_SERVER;
   if (sipPort == 0) sipPort = DEF_SIP_PORT;
   if (sipUser.length() == 0) sipUser = DEF_SIP_USER;
@@ -43,6 +51,10 @@ void Settings::save() {
   p.putUChar("vol", volume);
   p.putUChar("mic", micGain);
   p.putUChar("aec", aecMode);
+  p.putUChar("mslot", micSlot);
+  p.putUChar("rslot2", refSlot);
+  p.putUShort("rdelay", refDelayMs);
+  p.putUChar("afilt", aecFilter);
   p.end();
 }
 
