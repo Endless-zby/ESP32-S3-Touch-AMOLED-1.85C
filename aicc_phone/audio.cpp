@@ -214,7 +214,7 @@ struct PromptSeg { uint16_t freq; uint16_t ms; };
 // decay sound rounder/clearer than a plain gated sine.
 static const PromptSeg kPromptWake[]    = {{1046, 110}, {0, 25}, {1568, 190}};
 static const PromptSeg kPromptOk[]      = {{1318, 120}, {0, 20}, {1976, 90}};
-static const PromptSeg kPromptTimeout[] = {{880, 110}, {0, 25}, {659, 190}};
+static const PromptSeg kPromptTimeout[] = {{784, 150}, {0, 40}, {587, 300}};   // longer, downward: "window closed"
 
 static volatile uint8_t s_promptReq = AUDIO_PROMPT_NONE;
 static volatile bool s_promptBusy = false;
@@ -243,7 +243,7 @@ static bool prompt_render(int16_t *out) {
       if (t < 5) env = t / 5.0f;
       else { float u = 1.f - (float)t / (float)segMs; if (u < 0.f) u = 0.f; env = u * u; }
       const float v = sinf(s_promptPhase) + 0.30f * sinf(2.f * s_promptPhase);
-      out[i] = (int16_t)(v * 5200.0f * env);
+      out[i] = (int16_t)(v * 6200.0f * env);
       s_promptPhase += w;
       if (s_promptPhase > 2 * (float)M_PI) s_promptPhase -= 2 * (float)M_PI;
     }
@@ -592,6 +592,7 @@ static void audio_task(void *) {
         s_promptPhase = 0;
         s_promptBusy = true;
         pa_enable(true);
+        Serial.printf("[AUDIO] prompt %u start\n", (unsigned)kind);
       }
     }
 
@@ -599,7 +600,12 @@ static void audio_task(void *) {
       if (s_promptSegs) {
         const bool more = prompt_render(spk16);
         write_stereo(spk16);
-        if (!more) { s_promptBusy = false; pa_enable(false); }
+        if (!more) {
+          s_promptSegs = nullptr;   // stop re-entering the finished prompt
+          s_promptBusy = false;
+          pa_enable(false);
+          Serial.println("[AUDIO] prompt done");
+        }
         continue;   // never feed the prompt itself to the wake-word recogniser
       }
       if (clickFrames > 0) {

@@ -489,6 +489,7 @@ static void face_timer_cb(lv_timer_t *) {
     const float b = 0.5f + 0.5f * sinf(ph);
     lv_obj_set_style_border_opa(face_ring, (lv_opa_t)(40.f + 170.f * b), 0);
     lv_obj_set_style_shadow_opa(face_ring, (lv_opa_t)(20.f + 130.f * b), 0);
+    lv_obj_invalidate(face_ring);
   }
   if (now - lastClock >= 1000) { lastClock = now; face_clock_update(); }
   if (now - s_battAt > 5000) { s_battAt = now; face_battery_update(false); }
@@ -547,14 +548,14 @@ static void build_face() {
 
   // purple breathing ring around the rim while the wake word waits for a command
   face_ring = lv_obj_create(scr_face);
-  lv_obj_set_size(face_ring, LCD_W - 16, LCD_H - 16);
+  lv_obj_set_size(face_ring, LCD_W - 64, LCD_H - 64);   // ~148 px radius: well inside the round glass
   lv_obj_center(face_ring);
   lv_obj_set_style_bg_opa(face_ring, LV_OPA_TRANSP, 0);
-  lv_obj_set_style_border_width(face_ring, 6, 0);
+  lv_obj_set_style_border_width(face_ring, 8, 0);
   lv_obj_set_style_border_color(face_ring, lv_color_hex(0x8B5CF6), 0);
   lv_obj_set_style_border_opa(face_ring, LV_OPA_TRANSP, 0);
   lv_obj_set_style_shadow_color(face_ring, lv_color_hex(0x8B5CF6), 0);
-  lv_obj_set_style_shadow_width(face_ring, 24, 0);
+  lv_obj_set_style_shadow_width(face_ring, 28, 0);
   lv_obj_set_style_shadow_spread(face_ring, 2, 0);
   lv_obj_set_style_shadow_opa(face_ring, LV_OPA_TRANSP, 0);
   lv_obj_set_style_radius(face_ring, LV_RADIUS_CIRCLE, 0);
@@ -713,6 +714,7 @@ void ui_face_call_active(bool active) {
 
 void ui_face_listening(bool on) {
   s_listenRing = on;
+  Serial.printf("[UI] listening ring %s\n", on ? "on" : "off");
   if (face_ring) {
     lv_obj_set_style_border_opa(face_ring, on ? LV_OPA_60 : LV_OPA_TRANSP, 0);
     lv_obj_set_style_shadow_opa(face_ring, on ? LV_OPA_40 : LV_OPA_TRANSP, 0);
