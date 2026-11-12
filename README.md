@@ -22,9 +22,11 @@ build/           编译产物（tools/build.sh 生成）
 - **SIP**：直接 INVITE（FreeSWITCH 5080 外部口，免注册）或注册模式（5060，digest 认证）二选一；
   自动通过 OPTIONS 响应的 `received/rport` 学习公网地址以穿越 NAT；RTP 对称收发，服务器侧自动纠正媒体地址。
 - **音频**：ES8311 + ES7210 + NS4150B 功放，16 kHz 采样、软件重采样到 8 kHz。
-- **回声消除**：使用乐鑫 esp-sr 的 AEC（`libs/ESP_SR_AEC`，预编译库）。V2 板的 ES7210 第 3 路麦克风输入在硬件上
-  接的是 ES8311 的线路输出（原理图 "AEC" 区块），ES7210 开 TDM 后立体声帧的右声道就是这路回声参考信号，
-  AEC 用它对消扬声器串回麦克风的声音，实现全双工免提通话。网页里可选"高性能 / 低功耗 / 关闭"。
+- **回声消除**：使用乐鑫 esp-sr 的 AEC（`libs/ESP_SR_AEC`，预编译库），默认参数与 xiaozhi-esp32 在本板上相同
+  （全双工低功耗模式 + 最强 NLP）。V2 板的 ES7210 第 3 路麦克风输入在硬件上接的是 ES8311 的线路输出
+  （原理图 "AEC" 区块），ES7210 按 esp_codec_dev 的寄存器序列配置成 4 通道 TDM 后，64 位 I2S 帧里的
+  4 个 16 位槽位依次是 MIC1 / MIC3 / MIC2 / MIC4，槽位 1 就是回声参考。网页里可选 AEC 模式、麦克风/参考槽位、
+  参考通道增益；串口每 2 秒打印各槽位电平，便于核对。
 
 ## 编译环境
 
@@ -89,6 +91,8 @@ tools/monitor.sh        # 115200 串口日志
 | `ui.*` / `ui_strings.h` | LVGL 界面（所有控件都在圆形范围内）；中文字符串集中在 `ui_strings.h` |
 | `font_cn_18.c` / `font_cn_24.c` | 自动生成的中文字体（思源黑体子集 + ASCII + LVGL 图标） |
 | `web_portal.*` | 热点 + DNS 劫持 + 配网/设置网页 |
+| `es7210_board.*` | ES7210 四通道 ADC 初始化（复刻 esp_codec_dev 的寄存器序列，TDM + 回声参考通道） |
+| `es8311.*` | ES8311 解码器驱动（Waveshare 官方示例） |
 | `display.*` / `esp_lcd_st77916.*` | ST77916 QSPI 面板驱动（来自 Waveshare 官方示例） |
 | `touch.*` / `board_io.*` | CST816 触摸、TCA9554 扩展 IO、背光、I2C |
 | `lvgl_port.*` | LVGL 显示/触摸接入 |

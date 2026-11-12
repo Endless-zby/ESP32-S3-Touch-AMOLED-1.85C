@@ -8,10 +8,9 @@
 
 #if BOARD_V2
 #include "es8311.h"
-#include "es7210.h"
+#include "es7210_board.h"
 #include "esp_aec.h"
 static es8311_handle_t s_es8311 = NULL;
-static es7210_dev_handle_t s_es7210 = NULL;
 #endif
 
 // V2 bus layout (one I2S port, 16 kHz, 32-bit stereo => 64 BCLK per frame):
@@ -38,6 +37,8 @@ static volatile uint8_t s_micSlot = 0;      // TDM slot carrying the voice micro
 static volatile uint8_t s_refSlot = 4;      // 0..3 = TDM slot with the DAC loopback, 4 = software reference (our own playback)
 static volatile uint16_t s_refDelayMs = DEF_REF_DELAY_MS;  // software reference delay
 static volatile uint8_t s_aecFilter = DEF_AEC_FILTER;      // esp-sr filter_length
+static volatile uint8_t s_refGain = DEF_REF_GAIN;          // ES7210 MIC3 (reference) PGA gain code
+static bool s_codecReady = false;
 static volatile uint8_t s_slotLevel[4] = {0, 0, 0, 0};
 static volatile uint8_t s_micLevel = 0, s_spkLevel = 0;
 static RtpSession *s_rtp = NULL;
@@ -66,26 +67,11 @@ bool audio_init() {
   es8311_voice_volume_set(s_es8311, s_volume, NULL);
   es8311_microphone_config(s_es8311, false);
 
-  es7210_i2c_config_t i2ccfg = {};
-  i2ccfg.i2c_port = I2C_NUM_0;
-  i2ccfg.i2c_addr = ES7210_ADDRRES_00;
-  if (es7210_new_codec(&i2ccfg, &s_es7210) != ESP_OK) {
-    Serial.println("[AUDIO] es7210 create failed");
+  // ES7210: four ADCs in TDM, programmed like esp_codec_dev (xiaozhi-esp32).
+  if (!es7210_board_init(AUDIO_HW_RATE, 10 /*30 dB mics*/, s_refGain)) {
+    Serial.println("[AUDIO] es7210 init failed");
     return false;
   }
-  es7210_codec_config_t cc = {};
-  cc.i2s_format = ES7210_I2S_FMT_I2S;
-  cc.mclk_ratio = 256;
-  cc.sample_rate_hz = AUDIO_HW_RATE;
-  cc.bit_width = ES7210_I2S_BITS_16B;
-  cc.mic_bias = ES7210_MIC_BIAS_2V87;
-  cc.mic_gain = ES7210_MIC_GAIN_30DB;
-  cc.flags.tdm_enable = true;          // MIC1 + MIC3(reference) on one stereo frame
-  if (es7210_config_codec(s_es7210, &cc) != ESP_OK) {
-    Serial.println("[AUDIO] es7210 config failed");
-    return false;
-  }
-  es7210_config_volume(s_es7210, 0);
 
   s_i2s.setPins(PIN_I2S_BCLK, PIN_I2S_LRCK, PIN_I2S_DOUT, PIN_I2S_DIN, PIN_I2S_MCLK);
   s_i2s.setTimeout(100);
@@ -106,6 +92,7 @@ bool audio_init() {
     return false;
   }
 #endif
+  s_codecReady = true;
   Serial.println("[AUDIO] init ok");
   return true;
 }
@@ -129,6 +116,12 @@ void audio_set_aec_mode(uint8_t mode) { s_aecMode = mode; }
 void audio_set_slots(uint8_t micSlot, uint8_t refSlot) { s_micSlot = micSlot & 3; s_refSlot = refSlot > 4 ? 4 : refSlot; }
 void audio_set_ref_delay(uint16_t ms) { s_refDelayMs = ms > 400 ? 400 : ms; }
 void audio_set_aec_filter(uint8_t n) { s_aecFilter = n < 1 ? 1 : (n > 16 ? 16 : n); }
+void audio_set_ref_gain(uint8_t code) {
+  s_refGain = code > 14 ? 14 : code;
+#if BOARD_V2
+  if (s_codecReady) es7210_board_set_gain(3, s_refGain);
+#endif
+}
 uint8_t audio_aec_mode() { return s_aecMode; }
 void audio_set_mute(bool m) { s_mute = m; }
 bool audio_is_muted() { return s_mute; }
@@ -243,7 +236,12 @@ struct Aec {
   bool start(uint8_t m) {
     stop();
     if (m == 0) return false;
-    aec_mode_t am = (m >= 2) ? AEC_MODE_VOIP_HIGH_PERF : AEC_MODE_VOIP_LOW_COST;
+    // 1 = full-duplex low cost + very aggressive NLP (what xiaozhi-esp32 uses on this board)
+    // 2 = VoIP high performance, 3 = full-duplex high performance
+    aec_mode_t am = AEC_MODE_FD_LOW_COST;
+    aec_nlp_level_t nlp = AEC_NLP_LEVEL_VERYAGGR;
+    if (m == 2) { am = AEC_MODE_VOIP_HIGH_PERF; nlp = AEC_NLP_LEVEL_AGGR; }
+    else if (m == 3) { am = AEC_MODE_FD_HIGH_PERF; nlp = AEC_NLP_LEVEL_VERYAGGR; }
     aec_config_t cfg = {};
     cfg.mic_num = 1;
     cfg.ref_num = 1;
@@ -252,7 +250,7 @@ struct Aec {
     cfg.sample_rate = AUDIO_HW_RATE;
     cfg.caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;   // keep internal RAM for WiFi/lwIP
     cfg.mode = am;
-    cfg.nlp_level = AEC_NLP_LEVEL_AGGR;
+    cfg.nlp_level = nlp;
     h = aec_create_from_config(&cfg);
     if (!h) { Serial.println("[AEC] create failed"); return false; }
     chunk = aec_get_chunksize(h);
@@ -401,10 +399,18 @@ static bool read_mic(int16_t *mono16, int16_t *ref16) {
 #define PLAY_HIST_16K (AUDIO_HW_RATE / 2)      // 500 ms
 #define PLAY_HIST_8K  (RTP_RATE / 2)           // 500 ms
 #define MIC_HIST_8K   (RTP_RATE / 10)          // 100 ms
-static int16_t s_playHist16[PLAY_HIST_16K];
-static int16_t s_playHist8[PLAY_HIST_8K];
-static int16_t s_micHist8[MIC_HIST_8K];
+static int16_t *s_playHist16 = nullptr;   // PSRAM
+static int16_t *s_playHist8 = nullptr;    // PSRAM
+static int16_t *s_micHist8 = nullptr;     // PSRAM
 static int s_playPos16 = 0, s_playPos8 = 0, s_micPos8 = 0;
+
+static bool hist_alloc() {
+  if (s_playHist16) return true;
+  s_playHist16 = (int16_t *)heap_caps_calloc(PLAY_HIST_16K, sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  s_playHist8 = (int16_t *)heap_caps_calloc(PLAY_HIST_8K, sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  s_micHist8 = (int16_t *)heap_caps_calloc(MIC_HIST_8K, sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  return s_playHist16 && s_playHist8 && s_micHist8;
+}
 
 static void hist_push(int16_t *buf, int cap, int &pos, const int16_t *src, int n) {
   for (int i = 0; i < n; i++) { buf[pos] = src[i]; pos = (pos + 1) % cap; }
@@ -421,7 +427,9 @@ static void hist_fetch(const int16_t *buf, int cap, int pos, int delaySamples, i
 // correlation coefficient (0..1) to *corr.
 static int estimate_echo_lag(float *corr) {
   const int n = MIC_HIST_8K;
-  static int16_t mic[MIC_HIST_8K];
+  static int16_t *mic = (int16_t *)heap_caps_malloc(MIC_HIST_8K * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  static int16_t *play = (int16_t *)heap_caps_malloc(MIC_HIST_8K * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+  if (!mic || !play) { *corr = 0; return -1; }
   hist_fetch(s_micHist8, MIC_HIST_8K, s_micPos8, 0, mic, n);
   double micE = 0;
   for (int i = 0; i < n; i++) micE += (double)mic[i] * mic[i];
@@ -429,7 +437,6 @@ static int estimate_echo_lag(float *corr) {
   const int maxLagMs = 350;
   int bestLag = -1;
   double best = 0;
-  static int16_t play[MIC_HIST_8K];
   for (int lag = 0; lag <= maxLagMs; lag += 2) {
     hist_fetch(s_playHist8, PLAY_HIST_8K, s_playPos8, lag * RTP_RATE / 1000, play, n);
     double dot = 0, pe = 0;
@@ -474,9 +481,9 @@ static void audio_task(void *) {
       }
 #if BOARD_V2
       if (m == AUDIO_CALL) {
-        memset(s_playHist16, 0, sizeof(s_playHist16));
-        memset(s_playHist8, 0, sizeof(s_playHist8));
-        memset(s_micHist8, 0, sizeof(s_micHist8));
+        memset(s_playHist16, 0, PLAY_HIST_16K * sizeof(int16_t));
+        memset(s_playHist8, 0, PLAY_HIST_8K * sizeof(int16_t));
+        memset(s_micHist8, 0, MIC_HIST_8K * sizeof(int16_t));
         s_playPos16 = s_playPos8 = s_micPos8 = 0;
         if (s_aecMode != 0) s_aec.start(s_aecMode);
       } else if (s_aec.active()) {
@@ -600,6 +607,9 @@ static void audio_task(void *) {
 
 void audio_start_task(RtpSession *rtp) {
   s_rtp = rtp;
+#if BOARD_V2
+  if (!hist_alloc()) Serial.println("[AUDIO] history alloc failed");
+#endif
 #if BOARD_V2 && AEC_SELFTEST
   aec_selftest();
 #endif

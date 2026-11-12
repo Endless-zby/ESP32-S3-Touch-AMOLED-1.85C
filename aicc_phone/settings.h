@@ -18,6 +18,7 @@ struct Settings {
   uint8_t refSlot;     // V2: 0..3 TDM slot, 4 = software reference
   uint16_t refDelayMs; // software reference delay
   uint8_t aecFilter;   // esp-sr filter_length
+  uint8_t refGain;     // ES7210 reference PGA gain code
 
   void load();
   void save();
