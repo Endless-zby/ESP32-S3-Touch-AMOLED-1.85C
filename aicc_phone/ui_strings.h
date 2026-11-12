@@ -56,3 +56,6 @@
 #define STR_BACK            "返回"
 #define STR_VERSION         "版本"
 #define STR_RESTARTING      "正在重启..."
+#define STR_DEVICE_INFO              "设备信息"
+#define STR_DIALPAD              "拨号盘"
+#define STR_BRIGHTNESS              "亮度"
