@@ -56,6 +56,13 @@ static bool s_faceCall = false;
 static uint32_t s_battAt = 0;
 static int s_battPct = -1;
 
+// touch-follow ("pet the face"): the eyes look where the finger drags (full
+// deflection after ~95 px), the gaze holds for 200 ms, and a long press closes
+// the eyes - same behaviour as the reference PetEyes/HotelPet sketches.
+static bool s_faceTouch = false, s_faceLong = false, s_gazeActive = false;
+static int16_t s_faceStartX = 0, s_faceStartY = 0;
+static uint32_t s_gazeAt = 0;
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
@@ -386,6 +393,43 @@ static void face_tap_event(lv_event_t *) {
   if (s_faceCall && s_cb.onHangup) { key_click(); s_cb.onHangup(); }
 }
 
+static void face_touch_point(int16_t &x, int16_t &y) {
+  x = y = 0;
+  lv_indev_t *indev = lv_indev_active();
+  if (!indev) return;
+  lv_point_t p;
+  lv_indev_get_point(indev, &p);
+  x = p.x; y = p.y;
+}
+
+static void face_gaze_event(lv_event_t *e) {
+  const lv_event_code_t code = lv_event_get_code(e);
+  int16_t x = 0, y = 0;
+  face_touch_point(x, y);
+  if (code == LV_EVENT_PRESSED) {
+    s_faceTouch = true;
+    s_faceLong = false;
+    s_faceStartX = x;
+    s_faceStartY = y;
+  } else if (code == LV_EVENT_PRESSING) {
+    if (!s_faceTouch) return;
+    const float dx = (float)(x - s_faceStartX), dy = (float)(y - s_faceStartY);
+    const float dist = sqrtf(dx * dx + dy * dy);
+    if (dist > 6.f) {
+      const float k = min(1.f, (dist - 6.f) / 95.f) / dist;
+      s_face.setGazeOverride(true, dx * k, dy * k);
+      s_gazeAt = millis();
+      s_gazeActive = true;
+    }
+  } else if (code == LV_EVENT_LONG_PRESSED) {
+    s_faceLong = true;
+    s_face.setForceClosed(true);   // long press = closed eyes (petting)
+  } else {   // RELEASED / PRESS_LOST
+    s_faceTouch = false;
+    if (s_faceLong) { s_faceLong = false; s_face.setForceClosed(false); }
+  }
+}
+
 static void face_hang_event(lv_event_t *) {
   key_click();
   if (s_cb.onHangup) s_cb.onHangup();
@@ -428,6 +472,10 @@ static void face_timer_cb(lv_timer_t *) {
   }
   static uint32_t lastClock = 0;
   const uint32_t now = millis();
+  if (s_gazeActive && now - s_gazeAt > 200) {
+    s_gazeActive = false;
+    s_face.setGazeOverride(false, 0, 0);   // back to the idle gaze wander
+  }
   if (now - lastClock >= 1000) { lastClock = now; face_clock_update(); }
   if (now - s_battAt > 5000) { s_battAt = now; face_battery_update(false); }
 }
@@ -455,6 +503,11 @@ static void build_face() {
   lv_obj_set_pos(face_canvas, 0, 0);
   lv_obj_add_flag(face_canvas, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(face_canvas, face_tap_event, LV_EVENT_SHORT_CLICKED, NULL);
+  lv_obj_add_event_cb(face_canvas, face_gaze_event, LV_EVENT_PRESSED, NULL);
+  lv_obj_add_event_cb(face_canvas, face_gaze_event, LV_EVENT_PRESSING, NULL);
+  lv_obj_add_event_cb(face_canvas, face_gaze_event, LV_EVENT_LONG_PRESSED, NULL);
+  lv_obj_add_event_cb(face_canvas, face_gaze_event, LV_EVENT_RELEASED, NULL);
+  lv_obj_add_event_cb(face_canvas, face_gaze_event, LV_EVENT_PRESS_LOST, NULL);
 
   face_clock = mk_label(scr_face, "--:--", &lv_font_montserrat_24, COL_DIM, LV_ALIGN_TOP_MID, 0, 12);
   face_batt = lv_obj_create(scr_face);
@@ -610,6 +663,10 @@ void ui_show_face() {
   load(scr_face, UI_FACE);
   memset(s_faceBuf, 0, (size_t)LCD_W * LCD_H * 2);
   s_faceR.resetDirty();
+  s_face.setGazeOverride(false, 0, 0);
+  s_face.setForceClosed(false);
+  s_gazeActive = false;
+  s_faceLong = false;
   lv_obj_invalidate(face_canvas);
   face_clock_update();
   face_battery_update(true);
