@@ -387,15 +387,15 @@ static lv_obj_t *set_text(lv_obj_t *parent, const char *txt, const lv_font_t *fo
   return l;
 }
 
-static lv_obj_t *set_slider_card(lv_obj_t *parent, int y, const char *txt, int value, lv_obj_t **lblOut, lv_obj_t **sldOut) {
-  lv_obj_t *c = set_card(parent, y, 92, COL_CARD, NULL);
+static lv_obj_t *set_slider_card(lv_obj_t *parent, int y, const char *txt, int value, int vmin, int vmax, lv_obj_t **lblOut, lv_obj_t **sldOut) {
+  lv_obj_t *c = set_card(parent, y, 66, COL_CARD, NULL);
   lv_obj_t *l = set_text(c, txt, &font_cn_18, COL_DIM);
-  lv_obj_align(l, LV_ALIGN_TOP_LEFT, 20, 12);
+  lv_obj_align(l, LV_ALIGN_TOP_LEFT, 20, 8);
   *lblOut = l;
   lv_obj_t *sl = lv_slider_create(c);
-  lv_obj_set_size(sl, 264, 20);
-  lv_obj_align(sl, LV_ALIGN_BOTTOM_MID, 0, -12);
-  lv_slider_set_range(sl, 0, 100);
+  lv_obj_set_size(sl, 264, 18);
+  lv_obj_align(sl, LV_ALIGN_BOTTOM_MID, 0, -8);
+  lv_slider_set_range(sl, vmin, vmax);
   lv_slider_set_value(sl, value, LV_ANIM_OFF);
   lv_obj_set_style_bg_color(sl, lv_color_hex(COL_KEY), LV_PART_MAIN);
   lv_obj_set_style_radius(sl, 10, LV_PART_MAIN);
@@ -419,6 +419,12 @@ static void vol_sld_event(lv_event_t *e) {
   }
 }
 static void bri_sld_event(lv_event_t *e) {
+  if (lv_event_get_code(e) == LV_EVENT_RELEASED) {
+    if (lv_slider_get_value(set_bri_sld) < 20) lv_slider_set_value(set_bri_sld, 20, LV_ANIM_OFF);
+    s_brightness = (uint8_t)lv_slider_get_value(set_bri_sld);
+    backlight_set(s_brightness);
+    return;
+  }
   if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
   s_brightness = (uint8_t)lv_slider_get_value(set_bri_sld);
   lv_label_set_text_fmt(set_bri_lbl, LV_SYMBOL_EYE_OPEN "  " STR_BRIGHTNESS " %d%%", s_brightness);
@@ -456,23 +462,23 @@ static void build_settings() {
   lv_obj_t *t = set_text(set_menu, LV_SYMBOL_SETTINGS "  " STR_SETTINGS, &font_cn_24, COL_TEXT);
   lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 6);
 
-  set_slider_card(set_menu, 50, LV_SYMBOL_VOLUME_MAX "  " STR_VOLUME, s_volume, &set_vol_lbl, &set_vol_sld);
+  set_slider_card(set_menu, 46, LV_SYMBOL_VOLUME_MAX "  " STR_VOLUME, s_volume, 0, 100, &set_vol_lbl, &set_vol_sld);
   lv_obj_add_event_cb(set_vol_sld, vol_sld_event, LV_EVENT_ALL, NULL);
-  set_slider_card(set_menu, 152, LV_SYMBOL_EYE_OPEN "  " STR_BRIGHTNESS, s_brightness, &set_bri_lbl, &set_bri_sld);
+  set_slider_card(set_menu, 120, LV_SYMBOL_EYE_OPEN "  " STR_BRIGHTNESS, s_brightness, 20, 100, &set_bri_lbl, &set_bri_sld);
   lv_obj_add_event_cb(set_bri_sld, bri_sld_event, LV_EVENT_ALL, NULL);
   update_settings_volume();
   lv_label_set_text_fmt(set_bri_lbl, LV_SYMBOL_EYE_OPEN "  " STR_BRIGHTNESS " %d%%", s_brightness);
 
-  lv_obj_t *dial = set_card(set_menu, 254, 52, COL_ACCENT, set_dial_event);
+  lv_obj_t *dial = set_card(set_menu, 194, 52, COL_ACCENT, set_dial_event);
   lv_obj_t *dl = set_text(dial, LV_SYMBOL_CALL "  " STR_DIALPAD, &font_cn_18, COL_TEXT);
   lv_obj_center(dl);
-  lv_obj_t *rst = set_card(set_menu, 314, 52, COL_ORANGE, set_reset_event);
+  lv_obj_t *rst = set_card(set_menu, 254, 52, COL_ORANGE, set_reset_event);
   lv_obj_t *rl = set_text(rst, LV_SYMBOL_WIFI "  " STR_RESET_WIFI, &font_cn_18, COL_TEXT);
   lv_obj_center(rl);
-  lv_obj_t *inf = set_card(set_menu, 374, 52, COL_KEY, set_info_event);
+  lv_obj_t *inf = set_card(set_menu, 314, 52, COL_KEY, set_info_event);
   lv_obj_t *il = set_text(inf, LV_SYMBOL_LIST "  " STR_DEVICE_INFO, &font_cn_18, COL_TEXT);
   lv_obj_center(il);
-  lv_obj_t *bak = set_card(set_menu, 434, 52, COL_KEY, set_back_event);
+  lv_obj_t *bak = set_card(set_menu, 374, 52, COL_KEY, set_back_event);
   lv_obj_t *bl = set_text(bak, LV_SYMBOL_LEFT "  " STR_BACK, &font_cn_18, COL_TEXT);
   lv_obj_center(bl);
   backlight_set(s_brightness);
