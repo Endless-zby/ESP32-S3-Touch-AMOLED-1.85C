@@ -64,7 +64,7 @@
 // ---- Defaults (editable at runtime through the web page) -------------------
 #define DEF_SIP_SERVER   "113.249.109.160"
 #define DEF_SIP_PORT     5080
-#define DEF_DIAL_NUMBER  "801"
+#define DEF_DIAL_NUMBER  "8888"
 #define DEF_SIP_USER     "esp32phone"
 #define DEF_SIP_PASS     ""
 #define DEF_DISPLAY_NAME "ESP32 Phone"
