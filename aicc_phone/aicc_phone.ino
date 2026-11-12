@@ -393,7 +393,6 @@ void loop() {
           g_awakeUntil = wnow + kAwakeWindowMs;
           g_awakeActive = true;
           audio_prompt(AUDIO_PROMPT_WAKE);
-          ui_toast(STR_LISTENING, kAwakeWindowMs);
           ui_face_listening(true);
           ui_face_set_expr(EX_ATTENTIVE);
           break;
