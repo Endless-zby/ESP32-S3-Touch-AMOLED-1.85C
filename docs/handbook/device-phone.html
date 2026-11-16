@@ -105,10 +105,10 @@
 
   <div class="hero">
     <div>
-      <h1>一句"小西小西，呼叫前台"，<br><span>客房里的电话就打到了 AI 前台</span></h1>
+      <h1>一句"你好小安，呼叫前台"，<br><span>客房里的电话就打到了 AI 前台</span></h1>
       <p>这不是语音伴侣的又一代，而是一台真正的<b>电话机</b>：走标准 SIP 线路接入酒店的 AI 前台电话系统，免提通话、双向可打断、带硬件回声消除。平时它是一张会眨眼的脸和一只时钟，需要时喊一声就替你拨号。</p>
       <div class="chips">
-        <span class="chip"><b>语音拨号</b> 小西小西 → 呼叫前台</span>
+        <span class="chip"><b>语音拨号</b> 你好小安 → 呼叫前台</span>
         <span class="chip"><b>标准 SIP</b> 直连 AI 前台</span>
         <span class="chip"><b>免提全双工</b> 硬件回采 + AEC</span>
         <span class="chip"><b>手机配网</b> 无需 App</span>
@@ -120,7 +120,7 @@
         <div class="ring"></div>
         <div class="clock" id="heroClock">--:--</div>
         <div id="heroFace" style="position:absolute;inset:0"></div>
-        <div class="cap" id="heroCap">小西小西</div>
+        <div class="cap" id="heroCap">你好小安</div>
         <div class="batt">86</div>
       </div>
     </div>
@@ -130,8 +130,8 @@
     <h2>它能做什么</h2>
     <p class="sub">与两代"语音伴侣"不同，话机的核心是<b>通话</b>：它不在设备上跑对话模型，而是把声音原样接进酒店电话系统，由 AI 前台（或转接后的人工坐席）接听。</p>
     <div class="grid g3">
-      <div class="card"><h3><span class="ico">📞</span>一键呼叫前台</h3><p>按屏幕上的绿色按钮，或直接说"小西小西，呼叫前台"，设备立刻拨通预设的前台号码（默认 8888）。AI 前台接起后像普通电话一样对话。</p></div>
-      <div class="card"><h3><span class="ico">🗣️</span>语音唤醒与指令</h3><p>本地识别唤醒词"小西小西"，8 秒内说出指令即可：呼叫前台、调音量、调亮度。识别在设备上完成，不联网、不上传。</p></div>
+      <div class="card"><h3><span class="ico">📞</span>一键呼叫前台</h3><p>按屏幕上的绿色按钮，或直接说"你好小安，呼叫前台"，设备立刻拨通预设的前台号码（默认 8888）。AI 前台接起后像普通电话一样对话。</p></div>
+      <div class="card"><h3><span class="ico">🗣️</span>语音唤醒与指令</h3><p>本地识别唤醒词"你好小安"（乐鑫官方免费商用模型），8 秒内说出指令即可：呼叫前台、调音量、调亮度。识别在设备上完成，不联网、不上传。</p></div>
       <div class="card"><h3><span class="ico">✋</span>免提双向可打断</h3><p>板载双麦克风 + 硬件回声参考通道 + 乐鑫 AEC 算法，喇叭放得再响也不会把自己的声音传回去；AI 说话时你可以直接插话。</p></div>
       <div class="card"><h3><span class="ico">🔢</span>手动拨号盘</h3><p>设置页里藏着完整的 12 键拨号盘，可以拨任意分机或号码（需服务器侧放行），不只是前台。</p></div>
       <div class="card"><h3><span class="ico">📲</span>可接来电</h3><p>注册模式下前台或坐席可以回拨客房，设备振铃、屏幕显示来电方，点绿色接听、红色拒接。</p></div>
@@ -151,17 +151,17 @@
       <div class="step"><div><h4>手机连接设备热点</h4><p>热点名 <kbd>AICC-Phone-XXXX</kbd>（XXXX 为设备编号，印在屏幕上），密码 <kbd>12345678</kbd>。</p></div></div>
       <div class="step"><div><h4>选择 Wi-Fi 并提交</h4><p>手机会自动弹出配置页（没弹出就在浏览器打开 <kbd>192.168.4.1</kbd>）。页面列出附近的 2.4 GHz Wi-Fi，点选一个，输入密码，点"连接并保存"。页面实时显示连接结果。</p></div></div>
       <div class="step"><div><h4>自动进入待机</h4><p>联网成功后设备进入待机脸，顶部出现时钟，热点在 45 秒后自动关闭。设备随即向电话服务器探测连通性，此后便可拨号。</p></div></div>
-      <div class="step"><div><h4>第一通电话</h4><p>对着设备说 <b>"小西小西"</b>，听到上扬提示音、看到紫色光环后说 <b>"呼叫前台"</b>。设备应一声"好的"提示音后拨号，前台接起即可免提通话。说完点屏幕任意位置挂断。</p></div></div>
+      <div class="step"><div><h4>第一通电话</h4><p>对着设备说 <b>"你好小安"</b>，听到上扬提示音、看到紫色光环后说 <b>"呼叫前台"</b>。设备应一声"好的"提示音后拨号，前台接起即可免提通话。说完点屏幕任意位置挂断。</p></div></div>
     </div>
     <p class="note" style="margin-top:18px">配网只需做一次。设备记住 Wi-Fi 后每次开机自动联网；Wi-Fi 暂时不可用时会每 30 秒自动重试。仅支持 2.4 GHz Wi-Fi。</p>
   </section>
 
   <section id="voice">
     <h2>语音唤醒与指令</h2>
-    <p class="sub">所有识别都在设备本地完成（乐鑫 MultiNet 中文命令词模型），不需要网络，也不会上传任何声音。</p>
+    <p class="sub">所有识别都在设备本地完成：唤醒词用乐鑫 WakeNet9 官方模型"你好小安"，指令用乐鑫 MultiNet7 中文命令词模型，且命令词只在唤醒后的 8 秒窗口内识别。不需要网络，也不会上传任何声音。</p>
 
     <div class="flow">
-      <div class="card"><h3><span class="ico">1</span>喊唤醒词</h3><p>待机时说 <span class="say wake">小西小西</span>。正常音量、1 到 2 米内、四个字连读。</p></div>
+      <div class="card"><h3><span class="ico">1</span>喊唤醒词</h3><p>待机时说 <span class="say wake">你好小安</span>。正常音量、1 到 2 米内、四个字连读，"安"字读清楚。</p></div>
       <div class="card"><h3><span class="ico">2</span>确认在听</h3><p>设备播放一个上扬的双音提示，屏幕边缘亮起<b>紫色呼吸光环</b>，眼睛变成专注表情。</p></div>
       <div class="card"><h3><span class="ico">3</span>说指令</h3><p>在光环亮着的 <b>8 秒</b>内说出下表任一指令。听到短促的"好的"提示音即表示执行成功。</p></div>
       <div class="card"><h3><span class="ico">4</span>结束</h3><p>每条指令执行后窗口再延长 8 秒，可连续下达。超时无指令时播放一个下落音，光环熄灭，需重新喊唤醒词。</p></div>
@@ -171,7 +171,7 @@
     <table>
       <thead><tr><th style="width:18%">用途</th><th style="width:44%">可以这样说（任选其一）</th><th>设备反应</th></tr></thead>
       <tbody>
-        <tr><td><span class="dot" style="background:#b388ff"></span>唤醒</td><td><span class="say wake">小西小西</span></td><td>上扬提示音 + 紫色光环，进入 8 秒指令窗口。唤醒词本身不需要再说第二遍。</td></tr>
+        <tr><td><span class="dot" style="background:#b388ff"></span>唤醒</td><td><span class="say wake">你好小安</span></td><td>上扬提示音 + 紫色光环，进入 8 秒指令窗口。唤醒词本身不需要再说第二遍。</td></tr>
         <tr><td><span class="dot" style="background:#4ade80"></span>呼叫前台</td><td><span class="say">呼叫前台</span> <span class="say">给前台打电话</span> <span class="say">打电话给前台</span></td><td>"好的"提示音后约半秒开始拨打预设的前台号码，屏幕切到通话页。通话中不再响应语音指令。</td></tr>
         <tr><td><span class="dot" style="background:#7cc4ff"></span>音量调大</td><td><span class="say">声音大点</span> <span class="say">大点声</span></td><td>通话音量 +10%，屏幕弹出"音量 xx%"，设置永久保存。</td></tr>
         <tr><td><span class="dot" style="background:#7cc4ff"></span>音量调小</td><td><span class="say">声音小点</span> <span class="say">小点声</span></td><td>通话音量 −10%，同上。</td></tr>
@@ -181,7 +181,7 @@
     </table>
 
     <div class="grid g2" style="margin-top:16px">
-      <p class="note"><b>连起来说也可以。</b>"小西小西，呼叫前台"一口气说完即可，不必等提示音。唤醒后紧接着的指令只要落在 8 秒窗口内就会执行。</p>
+      <p class="note"><b>连起来说也可以。</b>"你好小安，呼叫前台"一口气说完即可，不必等提示音。唤醒后紧接着的指令只要落在 8 秒窗口内就会执行。</p>
       <p class="note warn"><b>不在表里的话不会执行。</b>这是命令词识别而不是自由对话，说"帮我叫前台"这类表外句式不会触发。需要自由提问请用语音伴侣，或呼叫前台后直接和 AI 前台说。</p>
     </div>
     <p class="note" style="margin-top:12px">三种提示音：<b>上扬双音</b> = 听到唤醒词；<b>短促单音</b> = 指令已执行；<b>下落单音</b> = 窗口超时关闭。提示音本身不会被送进识别器，不会误触发。</p>
@@ -191,7 +191,7 @@
     <h2>打电话</h2>
     <p class="sub">三种发起方式，一种挂断方式。</p>
     <div class="grid g3">
-      <div class="card"><h3><span class="ico">🗣️</span>语音</h3><p>"小西小西，呼叫前台"。最快，不用碰设备。</p></div>
+      <div class="card"><h3><span class="ico">🗣️</span>语音</h3><p>"你好小安，呼叫前台"。最快，不用碰设备。</p></div>
       <div class="card"><h3><span class="ico">🟢</span>绿色按钮</h3><p>按 BOOT 键进设置 → 拨号盘，不输入号码直接按绿色按钮即呼叫预设的前台号码。</p></div>
       <div class="card"><h3><span class="ico">🔢</span>手动拨号</h3><p>拨号盘上输入分机或号码再按绿色按钮。退格键短按删一位、长按清空。</p></div>
     </div>
@@ -279,6 +279,7 @@
         <tr><td>注册到服务器</td><td>否（直接呼叫）</td><td>改为"是"并把端口改 5060、填分机账号密码后，设备持有分机注册，可接来电</td></tr>
         <tr><td>音量 / 麦克风增益</td><td>75 / 150%</td><td>与设备上的音量同步；麦克风增益为数字增益，环境嘈杂时可降低</td></tr>
         <tr><td>回声消除 (AEC)</td><td>全双工·低功耗</td><td>可切高性能模式或关闭。关闭后退回简单的半双工抑制，不建议</td></tr>
+        <tr><td>唤醒灵敏度</td><td>标准</td><td>宽松 / 标准 / 严格三档，调节"你好小安"的触发阈值。漏唤醒选宽松，误唤醒选严格</td></tr>
         <tr><td>麦克风 / 参考通道等高级项</td><td>出厂值</td><td>硬件通道号、参考增益、滤波器长度、残余抑制开关。供调试，一般不要改</td></tr>
       </tbody>
     </table>
@@ -291,7 +292,8 @@
   <section id="faq">
     <h2>常见问题</h2>
     <p class="sub">遇到问题先看这里。</p>
-    <details><summary>喊"小西小西"没有反应</summary><p>确认设备在待机脸（通话中不响应唤醒词）。四个字连读、正常音量、1 到 2 米；等 2 秒再喊第二遍。电视声或多人同时说话会降低识别率。若设置页能正常用而唤醒始终无效，可能是模型分区未烧录，联系维护人员。</p></details>
+    <details><summary>喊"你好小安"没有反应</summary><p>确认设备在待机脸（通话中不响应唤醒词）。四个字连读，"安"字读清楚，正常音量、1 到 2 米；等 2 秒再喊第二遍。电视声或多人同时说话会降低识别率。可在网页配置页把"唤醒灵敏度"改为"宽松"。若设置页能正常用而唤醒始终无效，可能是模型分区未烧录，联系维护人员。</p></details>
+    <details><summary>没人说话它自己醒了</summary><p>偶发属正常（官方指标约 12 小时 1 次）。频繁误唤醒时在网页配置页把"唤醒灵敏度"改为"严格"，或让设备远离电视、空调出风口。</p></details>
     <details><summary>听到唤醒提示音，但说"呼叫前台"没反应</summary><p>指令要在紫色光环亮着的 8 秒内说完，并且要用表里的句式。听到下落音表示窗口已关，重新喊唤醒词。若网络未连接，屏幕会提示"网络未连接"，先检查 Wi-Fi。</p></details>
     <details><summary>拨号后提示"号码不存在"</summary><p>前台号码（DID）在电话系统里没有配置，或填错了。到网页配置页核对"前台号码"，或在电话系统后台确认该号码已分配给 AI 前台流程。</p></details>
     <details><summary>拨号后一直"正在呼叫..."然后失败</summary><p>设备到服务器的 SIP 不通。看设备信息页的 SIP 状态：显示"网络断开"是 Wi-Fi 问题；显示"直连模式"但仍失败，检查服务器地址/端口，以及所在网络是否拦截了 UDP 5060/5080 和 20000 端口。</p></details>
@@ -310,13 +312,13 @@
       <div class="card"><span class="tag now">可直接做</span><div><h3>一键服务按钮</h3><p>待机脸下方加一排图标（前台 / 送餐 / 保洁 / 叫车），点一下直接拨对应号码，老人和不习惯语音的客人也能用。号码表由后台下发，不同楼层、不同房型可以不一样。</p></div></div>
       <div class="card"><span class="tag now">可直接做</span><div><h3>房号身份与来电显示</h3><p>配网时填房号，设备以房号注册为分机。前台来电时屏幕显示"前台"，前台那边一看就知道是哪间房打来的，和酒店 PMS 的房态联动也有了钥匙。</p></div></div>
       <div class="card"><span class="tag next">近期</span><div><h3>DTMF 按键音与 IVR</h3><p>通话中弹出数字键盘发送 DTMF，可以操作电话系统里的按键菜单、输入房号或验证码；同时支持保持、转接。</p></div></div>
-      <div class="card"><span class="tag next">近期</span><div><h3>闹钟与叫醒服务</h3><p>设备有 RTC 时钟和喇叭。客人说"小西小西，明早七点叫我"，或前台在后台下发叫醒任务，到点由设备本地振铃，不占用电话线路；也可到点自动拨通前台做人工叫醒。</p></div></div>
+      <div class="card"><span class="tag next">近期</span><div><h3>闹钟与叫醒服务</h3><p>设备有 RTC 时钟和喇叭。客人说"你好小安，明早七点叫我"，或前台在后台下发叫醒任务，到点由设备本地振铃，不占用电话线路；也可到点自动拨通前台做人工叫醒。</p></div></div>
       <div class="card"><span class="tag next">近期</span><div><h3>通知与消息推送</h3><p>后台通过 SIP MESSAGE 或 HTTP 给设备推文字：早餐时间、退房提醒、天气、快递到了。屏幕弹卡片、喇叭轻响一声，客人点一下确认。</p></div></div>
       <div class="card"><span class="tag next">近期</span><div><h3>多语言唤醒与界面</h3><p>命令词模型支持英文词表，可为外宾房间切换"Hey Xiaoxi, call front desk"；界面文字已集中管理，换语言只需换一张字符串表并重新生成字体。</p></div></div>
       <div class="card"><span class="tag later">规划</span><div><h3>与语音伴侣合体</h3><p>同一台设备既能"聊"也能"打"：唤醒后先走本地命令词，命中就拨号，没命中就把语音交给云端大模型问答，回答中说"帮我转前台"再无缝接通电话。硬件（双麦、回采、全双工）已经齐备。</p></div></div>
       <div class="card"><span class="tag later">规划</span><div><h3>视频与对讲</h3><p>圆屏可显示前台摄像头画面或门口访客；配合酒店门禁，客人在房内看到来访者并一键开门或拒绝。</p></div></div>
       <div class="card"><span class="tag later">规划</span><div><h3>批量部署与远程运维</h3><p>后台看到每台话机的在线状态、信号强度、固件版本；一键远程重启、推送固件（OTA 分区已预留），配网信息可按楼层批量预置，免去逐台手机配网。</p></div></div>
-      <div class="card"><span class="tag later">规划</span><div><h3>氛围与客房控制</h3><p>待机脸之外，屏幕可做床头小时钟、天气、房间温度；通过本地网关联动灯光、窗帘、空调，"小西小西，关灯"由本地命令词直接执行，不经过云端。</p></div></div>
+      <div class="card"><span class="tag later">规划</span><div><h3>氛围与客房控制</h3><p>待机脸之外，屏幕可做床头小时钟、天气、房间温度；通过本地网关联动灯光、窗帘、空调，"你好小安，关灯"由本地命令词直接执行，不经过云端。</p></div></div>
     </div>
   </section>
 
@@ -328,7 +330,7 @@
       <div class="card"><h3>音频</h3><p>ES8311 解码 + ES7210 四通道 ADC（双麦克风 + 硬件回声参考）+ NS4150B 功放，4 Ω 5 W 喇叭</p></div>
       <div class="card"><h3>网络</h3><p>Wi-Fi 2.4 GHz；SIP over UDP，G.711 语音编码</p></div>
       <div class="card"><h3>电源</h3><p>USB-C 供电；BOX 版内置 3.7 V 锂电池，支持充放电</p></div>
-      <div class="card"><h3>唤醒词</h3><p>"小西小西"，本地识别，不上传；另有 11 条本地命令词</p></div>
+      <div class="card"><h3>唤醒词</h3><p>"你好小安"（乐鑫 WakeNet9 官方模型），本地识别，不上传；另有 11 条本地命令词</p></div>
       <div class="card"><h3>其他</h3><p>RTC 时钟芯片、Micro SD 卡槽、BOOT / RESET 按键</p></div>
       <div class="card"><h3>硬件</h3><p>微雪 ESP32-S3-Touch-LCD-1.85C（Rev 2.0）</p></div>
     </div>
@@ -336,13 +338,13 @@
 
 </main>
 
-<footer>小西话机 · 客房 AI 前台话机（ESP32-S3-Touch-LCD-1.85C）使用手册 · 2026-11</footer>
+<footer>小西话机 · 客房 AI 前台话机（ESP32-S3-Touch-LCD-1.85C）使用手册 · 2026-11（唤醒词更新：你好小安）</footer>
 <script>
 // 待机脸演示：与固件 face_model 同一几何（466 参考空间，眼中心 (233∓92, 237)，半宽 50、半高 66、圆角 32，视线 ±34/±26），
 // 弹簧过渡 + 眨眼 + 呼吸，轮播"待命 → 唤醒专注 → 通话"几个状态，底部字幕同步切换。
 (function () {
   const EX = [
-    ["listening", "待机 · 喊「小西小西」", [1.04,1.00,0.00,0.00,0.00,0.00,118,0,0.10,0.50,104,7.5],[1.04,1.00,0.00,0.00,0.00,0.00,118,0,0.10,0.50,104,7.5],0,-0.05,1,4],
+    ["listening", "待机 · 喊「你好小安」", [1.04,1.00,0.00,0.00,0.00,0.00,118,0,0.10,0.50,104,7.5],[1.04,1.00,0.00,0.00,0.00,0.00,118,0,0.10,0.50,104,7.5],0,-0.05,1,4],
     ["attentive", "在听 · 说「呼叫前台」", [1.18,1.04,0.00,0.00,0.00,0.03,136,3,0.14,0.78,108,7.2],[1.18,1.04,0.00,0.00,0.00,0.03,136,3,0.14,0.78,108,7.2],0,-0.12,0.15,3.5],
     ["speaking", "通话中 · 前台已接听", [0.96,1.04,0.00,0.00,0.48,0.00,120,1,0.06,0.62,104,7.5],[0.96,1.04,0.00,0.00,0.48,0.00,120,1,0.06,0.62,104,7.5],0,-0.06,1,4],
     ["happy", "通话结束", [0.90,1.06,0.00,0.00,0.70,0.00,126,2,0.12,0.75,106,7.5],[0.90,1.06,0.00,0.00,0.70,0.00,126,2,0.12,0.75,106,7.5],0,-0.08,1,2.5],

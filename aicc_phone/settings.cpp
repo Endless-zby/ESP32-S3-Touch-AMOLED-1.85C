@@ -29,6 +29,8 @@ void Settings::load() {
   micPga = p.getUChar("mpga", DEF_MIC_PGA);
   refDigGain = p.getUChar("rdig", DEF_REF_DIG_GAIN);
   resSuppress = p.getBool("rsup", DEF_RES_SUPPRESS);
+  wakeSens = p.getUChar("wsens", DEF_WAKE_SENSITIVITY);
+  if (wakeSens > 2) wakeSens = DEF_WAKE_SENSITIVITY;
   p.end();
   if (cfgv < AUDIO_CFG_VERSION) {
     // audio tuning defaults changed in this firmware: discard the stored ones
@@ -74,6 +76,7 @@ void Settings::save() {
   p.putUChar("mpga", micPga);
   p.putUChar("rdig", refDigGain);
   p.putBool("rsup", resSuppress);
+  p.putUChar("wsens", wakeSens);
   p.putUChar("cfgv", AUDIO_CFG_VERSION);
   p.end();
 }

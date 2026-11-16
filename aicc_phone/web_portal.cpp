@@ -61,6 +61,7 @@ button.sec{background:#3a4152}button.warn{background:#b23b3b}
 <div class="row"><div><label>软件参考延迟 (ms)</label><input id="rdelay" type="number" min="0" max="400"></div><div><label>AEC 滤波器长度 (1-16)</label><input id="afilt" type="number" min="1" max="16"></div></div>
 <div class="row"><div><label>参考通道模拟增益 (0-14)</label><input id="rgain" type="number" min="0" max="14"></div><div><label>参考通道软件增益 (x1-x8)</label><input id="rdig" type="number" min="1" max="8"></div></div>
 <div class="row"><div><label>麦克风模拟增益 (0-14, 6=18dB)</label><input id="mpga" type="number" min="0" max="14"></div><div><label>残余回声抑制</label><select id="rsup"><option value="1">开</option><option value="0">关</option></select></div></div>
+<label>唤醒灵敏度（唤醒词“你好小安”）</label><select id="wsens"><option value="0">标准</option><option value="1">宽松（更容易唤醒，误唤醒略多）</option><option value="2">严格（更少误唤醒）</option></select>
 <button onclick="saveSip()">保存 SIP 设置并重启</button>
 </div>
 <div class="card"><h2>设备</h2>
@@ -97,14 +98,14 @@ function poll(n){
 }
 function load(){
   fetch('/config').then(r=>r.json()).then(c=>{
-    ['sserver','sport','dial','suser','spass','dname','vol','mic','aec','mslot','rslot','rdelay','afilt','rgain','rdig','mpga','rsup'].forEach(k=>$(k).value=c[k]);
+    ['sserver','sport','dial','suser','spass','dname','vol','mic','aec','mslot','rslot','rdelay','afilt','rgain','rdig','mpga','rsup','wsens'].forEach(k=>$(k).value=c[k]);
     $('sreg').value=c.sreg?'1':'0';
     $('info').textContent='固件 '+c.fw+' | 热点 '+c.ap+' | 当前 Wi-Fi: '+(c.wifi||'未配置')+' | IP: '+(c.ip||'-');
   });
 }
 function saveSip(){
   var b=new URLSearchParams();
-  ['sserver','sport','dial','suser','spass','dname','sreg','vol','mic','aec','mslot','rslot','rdelay','afilt','rgain','rdig','mpga','rsup'].forEach(k=>b.append(k,$(k).value));
+  ['sserver','sport','dial','suser','spass','dname','sreg','vol','mic','aec','mslot','rslot','rdelay','afilt','rgain','rdig','mpga','rsup','wsens'].forEach(k=>b.append(k,$(k).value));
   fetch('/sip',{method:'POST',body:b}).then(r=>r.text()).then(t=>alert(t));
 }
 function resetWifi(){if(confirm('确定清除 Wi-Fi 配置并重启？'))fetch('/reset',{method:'POST'}).then(()=>alert('已清除，设备重启后会重新开启热点'))}
@@ -220,6 +221,7 @@ static void handleConfig() {
   out += "\"rdig\":" + String(s.refDigGain) + ",";
   out += "\"mpga\":" + String(s.micPga) + ",";
   out += "\"rsup\":" + String(s.resSuppress ? 1 : 0) + ",";
+  out += "\"wsens\":" + String(s.wakeSens) + ",";
   out += "\"fw\":\"" FW_VERSION "\",";
   out += "\"ap\":\"" + jsonEscape(s_apSsid) + "\",";
   out += "\"wifi\":\"" + jsonEscape(s.wifiSsid) + "\",";
@@ -247,6 +249,7 @@ static void handleSip() {
   if (s_server.hasArg("rdig")) s.refDigGain = constrain(s_server.arg("rdig").toInt(), 1, 8);
   if (s_server.hasArg("mpga")) s.micPga = constrain(s_server.arg("mpga").toInt(), 0, 14);
   if (s_server.hasArg("rsup")) s.resSuppress = s_server.arg("rsup").toInt() != 0;
+  if (s_server.hasArg("wsens")) s.wakeSens = constrain(s_server.arg("wsens").toInt(), 0, 2);
   if (s_server.hasArg("aec")) s.aecMode = constrain(s_server.arg("aec").toInt(), 0, 3);
   s.sipServer.trim(); s.dialNumber.trim(); s.sipUser.trim();
   if (s.sipPort == 0) s.sipPort = DEF_SIP_PORT;

@@ -69,6 +69,16 @@ tools/monitor.sh        # 115200 串口日志
 4. 按绿色按钮即可呼叫预设号码；通话中可静音、调音量、挂断。
 5. 齿轮按钮 → 查看 IP / 服务器 / 状态，“重新配网”会清除 Wi-Fi 并重启。
 
+## 语音唤醒与命令词
+
+- 唤醒词 **"你好小安"**：乐鑫 esp-sr 官方 WakeNet9 模型 `wn9_nihaoxiaoan_tts2`（免费商用），常开本地识别。
+- 命令词：乐鑫 MultiNet7 中文模型，只在唤醒后的 8 秒窗口内运行；词表在 `tools/srmodels/src/fst/commands_cn.txt`，
+  id 与 `wake_word.h` 的 `WAKE_CMD_*` 对应。
+- 模型包：`tools/pack_models.sh` 把 `tools/srmodels/src/` 打成 `tools/srmodels/srmodels_cn.bin`（约 3.25 MB），
+  烧录时 `tools/flash.sh --models` 写入 4 MB 的 `model` 分区（见 `aicc_phone/partitions.csv`）。
+- 灵敏度：网页配置页"唤醒灵敏度"三档（标准 / 宽松 / 严格），对应 WakeNet 阈值 默认 / −0.05 / +0.01。
+- 核心自带的 esp-sr 为 2.4.6，只支持 WakeNet9 系列模型（wn9 / wn9l / wn9s），不支持 wn10。
+
 ## SIP 对接说明（aicc / FreeSWITCH）
 
 - **默认（直连）**：INVITE `sip:<号码>@<服务器>:5080`，不注册。这是 FreeSWITCH external 口，

@@ -98,6 +98,9 @@ static void startSip() {
 static void onCallState(SipCallState s) {
   switch (s) {
     case SIP_CALL_INVITING:
+      g_awakeActive = false;
+      g_awakeUntil = 0;
+      WakeWord::endCommandWindow();
       ui_face_listening(false);
       ui_show_call(g_sip.remoteParty().c_str(), STR_CALLING);
       audio_set_mode(AUDIO_IDLE);
@@ -107,6 +110,9 @@ static void onCallState(SipCallState s) {
       if (audio_mode() != AUDIO_CALL) audio_set_mode(AUDIO_RINGBACK);
       break;
     case SIP_CALL_INCOMING:
+      g_awakeActive = false;
+      g_awakeUntil = 0;
+      WakeWord::endCommandWindow();
       ui_show_incoming(g_sip.remoteParty().c_str());
       audio_set_mode(AUDIO_RINGING);
       break;
@@ -352,6 +358,7 @@ void setup() {
 
   // Wake word / command words (ESP-SR MultiNet7, model pack in the "model" partition)
   WakeWord::begin();
+  WakeWord::setSensitivity(g_settings.wakeSens);
   pinMode(0, INPUT_PULLUP);   // BOOT button (also the ESP32-S3 boot strap)
 
   g_sip.onCallState = onCallState;
@@ -387,9 +394,11 @@ void loop() {
       const bool awake = (int32_t)(wnow - g_awakeUntil) < 0;
       switch (wcmd) {
         case WAKE_CMD_WAKE:
+          if (!g_sip.isIdle()) break;            // never during a call
           g_awakeUntil = wnow + kAwakeWindowMs;
           g_awakeActive = true;
           audio_prompt(AUDIO_PROMPT_WAKE);
+          WakeWord::startCommandWindow();        // MultiNet takes the microphone for the window
           ui_face_listening(true);
           ui_face_set_expr(EX_ATTENTIVE);
           break;
@@ -452,6 +461,7 @@ void loop() {
           if (g_sip.isIdle()) {
             g_awakeUntil = 0;
             g_awakeActive = false;
+            WakeWord::endCommandWindow();
             audio_prompt(AUDIO_PROMPT_OK);
             ui_face_listening(false);
             g_dialNumber = g_settings.dialNumber;
@@ -491,9 +501,23 @@ void loop() {
   // Closing the command window: a soft falling note asks for the wake word again.
   if (g_awakeActive && (int32_t)(now - g_awakeUntil) >= 0) {
     g_awakeActive = false;
+    WakeWord::endCommandWindow();
     ui_face_listening(false);       // command window closed: one tone, then back
     audio_prompt(AUDIO_PROMPT_TIMEOUT);
     ui_face_set_expr(EX_LISTENING);
+  }
+
+  // Wake-word engine health every 60 s: CPU per chunk and counters.
+  {
+    static uint32_t lastWakeStat = 0;
+    if (now - lastWakeStat > 60000) {
+      lastWakeStat = now;
+      WakeWord::Stats ws = WakeWord::stats();
+      Serial.printf("[WAKE] stage=%d wakes=%lu cmds=%lu wn avg/max %lu/%lu us  mn avg/max %lu/%lu us  %s\n",
+                    (int)ws.stage, (unsigned long)ws.wakes, (unsigned long)ws.commands,
+                    (unsigned long)ws.wnAvgUs, (unsigned long)ws.wnMaxUs, (unsigned long)ws.mnAvgUs, (unsigned long)ws.mnMaxUs,
+                    ws.ready ? "" : ws.error);
+    }
   }
 
   // call timer / meters (4x per second)

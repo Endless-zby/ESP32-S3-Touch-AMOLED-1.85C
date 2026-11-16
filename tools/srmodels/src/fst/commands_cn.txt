@@ -1,0 +1,11 @@
+2,sheng yin da dian
+3,sheng yin xiao dian
+4,da dian sheng
+5,xiao dian sheng
+6,gei qian tai da dian hua
+7,da dian hua gei qian tai
+8,hu jiao qian tai
+9,ping mu liang yi dian
+10,ping mu an yi dian
+11,liang yi dian
+12,an yi dian

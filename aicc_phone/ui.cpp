@@ -37,7 +37,7 @@ static lv_obj_t *scr_dialer, *dial_status_icon, *dial_status_text, *dial_number,
 static lv_obj_t *scr_call, *call_status, *call_party, *call_timer, *call_bar_mic, *call_bar_spk, *call_mute_btn, *call_mute_lbl, *call_volm_btn, *call_volp_btn, *call_hang_btn, *call_vol_lbl;
 static lv_obj_t *scr_in, *in_caller, *in_answer_btn, *in_reject_btn;
 static lv_obj_t *scr_set, *set_menu, *set_vol_lbl, *set_vol_sld, *set_bri_lbl, *set_bri_sld;
-static lv_obj_t *scr_info, *info_lines[4];
+static lv_obj_t *scr_info, *info_lines[5];
 static void update_settings_volume();
 static uint8_t s_brightness = 80;
 static uint32_t s_resetArmAt = 0;
@@ -537,8 +537,8 @@ static void build_info() {
   scr_info = mk_screen();
   lv_obj_t *t = set_text(scr_info, LV_SYMBOL_LIST "  " STR_DEVICE_INFO, &font_cn_24, COL_TEXT);
   lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 30);
-  for (int i = 0; i < 4; i++) {
-    info_lines[i] = mk_label(scr_info, "", &font_cn_18, COL_DIM, LV_ALIGN_TOP_MID, 0, 76 + i * 26);
+  for (int i = 0; i < 5; i++) {
+    info_lines[i] = mk_label(scr_info, "", &font_cn_18, COL_DIM, LV_ALIGN_TOP_MID, 0, 72 + i * 25);
     lv_obj_set_width(info_lines[i], 250);
     lv_obj_set_style_text_align(info_lines[i], LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(info_lines[i], LV_LABEL_LONG_DOT);
@@ -832,6 +832,7 @@ void ui_show_settings(const char *ip, const char *server, const char *sipState, 
   lv_label_set_text_fmt(info_lines[1], STR_SERVER ": %s", server);
   lv_label_set_text_fmt(info_lines[2], STR_STATUS ": %s", sipState);
   lv_label_set_text_fmt(info_lines[3], STR_VERSION " %s  " STR_HOTSPOT " %s", version, apName);
+  lv_label_set_text(info_lines[4], STR_WAKE_WORD ": " STR_WAKE_WORD_TEXT);
   if (s_screen != UI_SETTINGS && s_screen != UI_INFO) load(scr_set, UI_SETTINGS);
   update_settings_volume();
 }

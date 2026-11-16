@@ -22,6 +22,7 @@ struct Settings {
   uint8_t micPga;      // ES7210 MIC1/2 PGA gain code
   uint8_t refDigGain;  // software reference gain x1..x8
   bool resSuppress;    // residual echo suppression
+  uint8_t wakeSens;    // wake word sensitivity 0 std, 1 relaxed, 2 strict
 
   void load();
   void save();

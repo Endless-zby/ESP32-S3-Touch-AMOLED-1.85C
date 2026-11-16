@@ -1,20 +1,17 @@
 #pragma once
 #include <Arduino.h>
 
-// Local wake word / command word recognition.
+// Local wake word + command word recognition (ESP-SR, all on device).
 //
-// Espressif does not ship a WakeNet model for a custom phrase, so the reference
-// project (xiaoxi-claude/HotelPet) uses the Chinese MultiNet7 command recogniser
-// instead: the model pack in the "model" flash partition carries a command table
-// (fst/commands_cn.txt) whose entries are pinyin, currently
-//   "xiao xi xiao xi"  ->  "小西小西"
-// and this module feeds 16 kHz mono microphone samples straight into it.
+// Two-stage, the way Espressif intends it:
+//   1. WakeNet9 "你好小安" (wn9_nihaoxiaoan_tts2) runs continuously while idle.
+//   2. After a wake, the Chinese MultiNet7 command recogniser takes over the
+//      microphone for the command window; it is idle (loaded, not running) the
+//      rest of the time, so command phrases can never fire without a wake.
 //
-// Phase 1 only reports detections over the serial console; the UI/command
-// dispatch is layered on top later.
-// Command ids come from the model pack's fst/commands_cn.txt, one line per
-// phrase. Keep this list and tools/srmodels/srmodels_cn.bin in sync.
-#define WAKE_CMD_WAKE         1   // xiao xi xiao xi        小西小西
+// The model pack (tools/srmodels/srmodels_cn.bin, built by tools/pack_models.sh)
+// lives in the "model" flash partition. Command ids come from its
+// fst/commands_cn.txt, one line per phrase; keep this list and that file in sync.
 #define WAKE_CMD_VOL_UP       2   // sheng yin da dian      声音大点
 #define WAKE_CMD_VOL_DOWN     3   // sheng yin xiao dian    声音小点
 #define WAKE_CMD_VOL_UP2      4   // da dian sheng          大点声
@@ -27,25 +24,45 @@
 #define WAKE_CMD_BRI_UP2     11   // liang yi dian                亮一点
 #define WAKE_CMD_BRI_DOWN2   12   // an yi dian                   暗一点
 
+// Pseudo command id reported by consume() when the wake word itself is heard.
+#define WAKE_CMD_WAKE        1
+
 namespace WakeWord {
 
+enum Stage { STAGE_OFF = 0, STAGE_WAKE, STAGE_COMMAND };
+
 struct Stats {
-  bool ready = false;        // model pack loaded and MultiNet created
+  bool ready = false;        // both models created
   bool listening = true;     // feed() is currently accepted
-  uint32_t chunks = 0;       // 16 kHz chunks sent to MultiNet
-  uint32_t detections = 0;   // accepted detections (prob >= threshold)
-  uint32_t maxDetectUs = 0;  // longest MultiNet detect() call
-  char model[32] = {};       // e.g. "mn7_cn"
+  Stage stage = STAGE_OFF;
+  uint32_t chunks = 0;       // audio chunks processed
+  uint32_t wakes = 0;        // wake word detections
+  uint32_t commands = 0;     // accepted command detections
+  uint32_t wnAvgUs = 0;      // WakeNet detect() average (since last stats())
+  uint32_t wnMaxUs = 0;
+  uint32_t mnAvgUs = 0;      // MultiNet detect() average (since last stats())
+  uint32_t mnMaxUs = 0;
+  char wakeModel[32] = {};   // e.g. "wn9_nihaoxiaoan_tts2"
+  char wakeWord[32] = {};    // e.g. "nihaoxiaoan"
+  char cmdModel[32] = {};    // e.g. "mn7_cn"
   char error[64] = {};       // last failure reason
 };
 
-bool begin();                            // load the model pack, create MultiNet
-void setListening(bool on);              // pause while a call owns the CPU
+bool begin();                            // load the model pack, create WakeNet + MultiNet
+void setListening(bool on);              // pause everything while a call owns the microphone
 bool listening();
-// Feed 16 kHz mono PCM. Called from the audio task; no-op until begin() succeeds.
+// Switch between the two stages. The application calls startCommandWindow()
+// when it accepts a wake (after the chime) and endCommandWindow() when the
+// window closes or a command was executed and no follow-up is expected.
+void startCommandWindow();
+void endCommandWindow();
+Stage stage();
+// Feed 16 kHz mono PCM from the audio task. No-op until begin() succeeds.
 void feed(const int16_t *pcm, int samples);
-// Latest detection, read-and-cleared by the main loop.
+// Latest detection (WAKE_CMD_WAKE or a command id), read-and-cleared by the main loop.
 bool consume(int &commandId, float &prob, char *phrase, size_t cap);
+// Wake sensitivity: 0 = model default (90% mode), 1 = relaxed (-0.05), 2 = strict (95% mode).
+void setSensitivity(uint8_t level);
 Stats stats();
 
 }  // namespace WakeWord

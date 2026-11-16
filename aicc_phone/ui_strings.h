@@ -65,3 +65,5 @@
 #define STR_SUB_INFO "网络 · 电话 · 版本"
 #define STR_DEVICE "设备"
 #define STR_DEVICE_INFO     "设备信息"
+#define STR_WAKE_WORD       "唤醒词"
+#define STR_WAKE_WORD_TEXT  "你好小安"
