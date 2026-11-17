@@ -261,7 +261,8 @@ void onWsEvent(WStype_t t, uint8_t *payload, size_t len) {
       Serial.printf("[VOICE] ws connected (%s) heap=%u\n", (const char *)payload, (unsigned)ESP.getFreeHeap());
       break;
     case WStype_DISCONNECTED:
-      Serial.printf("[VOICE] ws disconnected (state %d)\n", (int)s_state);
+      Serial.printf("[VOICE] ws disconnected (state %d) heap=%u min=%u tx=%lu rx=%lu\n", (int)s_state,
+                    (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(), (unsigned long)s_st.txChunks, (unsigned long)s_st.bytesIn);
       if (s_state == VS_CONNECTING) { s_state = VS_ERROR; postEvent(Event::FAILED, "connect failed"); }
       else if (s_state == VS_READY) { s_state = VS_ERROR; postEvent(Event::CLOSED); }
       break;
@@ -294,8 +295,10 @@ void onWsEvent(WStype_t t, uint8_t *payload, size_t len) {
 // task
 // ---------------------------------------------------------------------------
 void sendMicChunk() {
-  // 100 ms of 16 kHz PCM per append
-  const int N = 1600;
+  // 40 ms of 16 kHz PCM per append (small frames keep the TLS/WS send buffers
+  // small: internal RAM is the scarce resource during a session)
+  const int N = 640;
+  if (ESP.getFreeHeap() < 24000) return;   // back-pressure: skip this round, the ring keeps the audio
   static int16_t *pcm = (int16_t *)heap_caps_malloc(N * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!pcm) return;
   xSemaphoreTake(s_ringLock, portMAX_DELAY);
@@ -310,7 +313,11 @@ void sendMicChunk() {
   size_t olen = 0;
   if (mbedtls_base64_encode((uint8_t *)b64, B64CAP, &olen, (const uint8_t *)pcm, N * 2) != 0) return;
   int n = snprintf(msg, MSGCAP, "{\"type\":\"input_audio_buffer.append\",\"audio\":\"%.*s\"}", (int)olen, b64);
-  s_ws.sendTXT(msg, n);
+  if (!s_ws.sendTXT(msg, n)) {
+    static uint32_t lastErr = 0;
+    if (millis() - lastErr > 2000) { lastErr = millis(); Serial.printf("[VOICE] sendTXT failed heap=%u\n", (unsigned)ESP.getFreeHeap()); }
+    return;
+  }
   s_st.txChunks++;
 }
 
@@ -335,6 +342,7 @@ void voiceTask(void *) {
       delete js;
     }
     if (s_sessionReady && s_ws.isConnected()) {
+      sendMicChunk();
       sendMicChunk();
     } else if (s_state == VS_CONNECTING && millis() - started > VOICE_CONNECT_TIMEOUT_MS) {
       Serial.println("[VOICE] connect timeout");
