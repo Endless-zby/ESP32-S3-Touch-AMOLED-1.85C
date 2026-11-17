@@ -315,11 +315,14 @@ void onWsEvent(WStype_t t, uint8_t *payload, size_t len) {
 // ---------------------------------------------------------------------------
 // task
 // ---------------------------------------------------------------------------
+uint32_t s_sendMaxUs = 0, s_sendSlow = 0, s_hookSends = 0, s_sendBusy = 0;   // upload timing diagnostics
+
 void sendMicChunk() {
   // 40 ms of 16 kHz PCM per append (small frames keep the TLS/WS send buffers
   // small: internal RAM is the scarce resource during a session)
   const int N = 640;
   if (ESP.getFreeHeap() < 24000) return;   // back-pressure: skip this round, the ring keeps the audio
+  if (!s_ws.writable()) { s_sendBusy++; return; }   // TCP send buffer full: do not block the task, the ring keeps the audio
   static int16_t *pcm = (int16_t *)heap_caps_malloc(N * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!pcm) return;
   xSemaphoreTake(s_ringLock, portMAX_DELAY);
@@ -339,7 +342,12 @@ void sendMicChunk() {
   size_t olen = 0;
   if (mbedtls_base64_encode((uint8_t *)b64, B64CAP, &olen, (const uint8_t *)pcm, N * 2) != 0) return;
   int n = snprintf(msg, MSGCAP, "{\"type\":\"input_audio_buffer.append\",\"audio\":\"%.*s\"}", (int)olen, b64);
-  if (!s_ws.sendTXT(msg, n)) {
+  const uint32_t t0 = micros();
+  const bool okSend = s_ws.sendTXT(msg, n);
+  const uint32_t dt = micros() - t0;
+  if (dt > s_sendMaxUs) s_sendMaxUs = dt;
+  if (dt > 100000) s_sendSlow++;
+  if (!okSend) {
     Serial.printf("[VOICE] sendTXT failed (write stalled >5 s) int=%u largest=%u -> closing\n",
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
     s_ws.disconnect();   // a half-written frame cannot be recovered
@@ -356,7 +364,9 @@ void wsIdleHook() {
   static bool inHook = false;
   if (inHook || !s_sessionReady || !s_ws.isConnected()) return;
   inHook = true;
+  const uint32_t before = s_st.txChunks;
   sendMicChunk();
+  if (s_st.txChunks != before) s_hookSends++;
   inHook = false;
 }
 
@@ -393,9 +403,10 @@ void voiceTask(void *) {
       if (hi < minInt) minInt = hi;
       if (millis() - lastTxLog > 2000) {
         lastTxLog = millis();
-        Serial.printf("[VOICE] tx=%lu | int now=%u min2s=%u largest=%u | total min=%u\n", (unsigned long)s_st.txChunks,
+        Serial.printf("[VOICE] tx=%lu hook=%lu busy=%lu sendmax=%lums slow=%lu | int now=%u min2s=%u largest=%u | total min=%u\n", (unsigned long)s_st.txChunks,
+                      (unsigned long)s_hookSends, (unsigned long)s_sendBusy, (unsigned long)(s_sendMaxUs / 1000), (unsigned long)s_sendSlow,
                       (unsigned)hi, (unsigned)minInt, (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL), (unsigned)ESP.getMinFreeHeap());
-        minInt = 0xFFFFFFFF;
+        minInt = 0xFFFFFFFF; s_sendMaxUs = 0;
       }
     } else if (s_state == VS_CONNECTING && millis() - started > VOICE_CONNECT_TIMEOUT_MS) {
       Serial.println("[VOICE] connect timeout");
@@ -510,7 +521,8 @@ void VoiceSession::pushMic(const int16_t *pcm, int n) {
   if (!s_mic || !s_sessionReady) return;
   xSemaphoreTake(s_ringLock, portMAX_DELAY);
   int head = s_micHead, count = s_micCount;
-  if (count + n > MIC_CAP) { int drop = count + n - MIC_CAP; head = (head + drop) % MIC_CAP; count -= drop; s_st.micDrops += drop; }
+  const int MIC_MAX_BACKLOG = 16000 * 3 / 2;   // 1.5 s: older audio only adds delay to the server's view of the guest
+  if (count + n > MIC_MAX_BACKLOG) { int drop = count + n - MIC_MAX_BACKLOG; head = (head + drop) % MIC_CAP; count -= drop; s_st.micDrops += drop; }
   int tail = (head + count) % MIC_CAP;
   xSemaphoreGive(s_ringLock);
   int first = min(n, MIC_CAP - tail);

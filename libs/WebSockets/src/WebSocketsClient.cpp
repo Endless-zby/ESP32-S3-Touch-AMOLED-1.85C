@@ -493,6 +493,25 @@ bool WebSocketsClient::isConnected(void) {
     return (_client.status == WSC_CONNECTED);
 }
 
+bool WebSocketsClient::writable(void) {
+    if(_client.status != WSC_CONNECTED || !_client.tcp) {
+        return false;
+    }
+#if defined(ESP32)
+    int fd = _client.tcp->fd();
+    if(fd < 0) {
+        return true;
+    }
+    fd_set w;
+    FD_ZERO(&w);
+    FD_SET(fd, &w);
+    struct timeval tv = { 0, 0 };
+    return select(fd + 1, NULL, &w, NULL, &tv) > 0;
+#else
+    return true;
+#endif
+}
+
 /**
  * RFC 6455
  * get the full URL/URI of the connection

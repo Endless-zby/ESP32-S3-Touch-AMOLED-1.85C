@@ -113,6 +113,9 @@ class WebSocketsClient : protected WebSockets {
     void disableHeartbeat();
 
     bool isConnected(void);
+    // true when the socket can take more data right now (select() with zero
+    // timeout); lets realtime senders skip a round instead of blocking in write().
+    bool writable(void);
     String getUrl(void);
 
   protected:
