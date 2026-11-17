@@ -420,6 +420,12 @@ typedef struct {
 } WSclient_t;
 
 class WebSockets {
+  public:
+    // Called (same task) whenever readCb is waiting for more bytes of an
+    // incoming frame. Lets the application keep sending (e.g. realtime mic
+    // audio) while a large frame trickles in over TLS. Must not block long.
+    static void (*idleHook)();
+
   protected:
 #ifdef __AVR__
     typedef void (*WSreadWaitCb)(WSclient_t * client, bool ok);

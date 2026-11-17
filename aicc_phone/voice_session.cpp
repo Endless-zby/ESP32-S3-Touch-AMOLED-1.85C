@@ -348,6 +348,18 @@ void sendMicChunk() {
   s_st.txChunks++;
 }
 
+// Runs inside the WebSocket read loop while it waits for the rest of a large
+// incoming frame (a 400 ms audio delta is ~26 KB and can take 100-300 ms to
+// arrive). Without this the mic upload stalls for that long on every frame,
+// the server hears the guest late and in pieces, and barge-in never triggers.
+void wsIdleHook() {
+  static bool inHook = false;
+  if (inHook || !s_sessionReady || !s_ws.isConnected()) return;
+  inHook = true;
+  sendMicChunk();
+  inHook = false;
+}
+
 void voiceTask(void *) {
   // While the session runs, let malloc() of 2 KB+ come from PSRAM (default is
   // 4 KB+ internal first). mbedTLS record buffers and the lwIP/WS copies are the
@@ -359,6 +371,7 @@ void voiceTask(void *) {
   s_ws.setReconnectInterval(3000);
   s_ws.enableHeartbeat(30000, 20000, 3);   // lenient: long frame reads / blocked writes must not count as a dead link
   s_ws.onEvent(onWsEvent);
+  WebSockets::idleHook = wsIdleHook;
   Serial.printf("[VOICE] connecting wss://%s%s heap=%u\n", s_cfg.host.c_str(), url.c_str(), (unsigned)ESP.getFreeHeap());
   s_ws.beginSSL(s_cfg.host.c_str(), 443, url.c_str());   // no CA pinned: TLS encrypts, identity is not verified
 
@@ -394,6 +407,7 @@ void voiceTask(void *) {
     }
     vTaskDelay(pdMS_TO_TICKS(10));
   }
+  WebSockets::idleHook = nullptr;
   s_ws.disconnect();
   heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
   // drain tx queue
@@ -496,7 +510,7 @@ void VoiceSession::pushMic(const int16_t *pcm, int n) {
   if (!s_mic || !s_sessionReady) return;
   xSemaphoreTake(s_ringLock, portMAX_DELAY);
   int head = s_micHead, count = s_micCount;
-  if (count + n > MIC_CAP) { int drop = count + n - MIC_CAP; head = (head + drop) % MIC_CAP; count -= drop; }
+  if (count + n > MIC_CAP) { int drop = count + n - MIC_CAP; head = (head + drop) % MIC_CAP; count -= drop; s_st.micDrops += drop; }
   int tail = (head + count) % MIC_CAP;
   xSemaphoreGive(s_ringLock);
   int first = min(n, MIC_CAP - tail);

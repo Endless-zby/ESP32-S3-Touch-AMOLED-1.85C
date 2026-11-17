@@ -16,6 +16,7 @@ AssistantState s_state = AS_SLEEP;
 uint32_t s_stateSince = 0;
 uint32_t s_sessionStartAt = 0;
 uint32_t s_lastActivity = 0;       // last speech by either side
+String s_captionPending; bool s_captionDirty = false; uint32_t s_captionDrawn = 0;   // transcript redraw throttle
 uint32_t s_failedAt = 0;
 bool s_resumeAfterCall = false;    // a session was running when the call started
 bool s_pendingDial = false;        // call_front_desk accepted: dial after the model finishes its sentence
@@ -71,7 +72,7 @@ void goSleep() {
   VoiceSession::end();
   if (audio_mode() == AUDIO_VOICE) audio_set_mode(AUDIO_IDLE);
   setRing(false);
-  ui_face_caption("");
+  s_captionDirty = false; s_captionPending = ""; ui_face_caption("");
   ui_face_set_expr(EX_SLEEPY);
   ui_screen_sleep(true);
   WakeWord::setListening(true);
@@ -185,7 +186,7 @@ void doDial() {
   VoiceSession::end();
   if (audio_mode() == AUDIO_VOICE) audio_set_mode(AUDIO_IDLE);
   setRing(false);
-  ui_face_caption("");
+  s_captionDirty = false; s_captionPending = ""; ui_face_caption("");
   s_resumeAfterCall = true;
   if (!(H.dialFrontDesk && H.dialFrontDesk())) {
     // could not dial: back to a fresh session so the guest is told
@@ -225,7 +226,7 @@ void assistant_on_call_started() {
     s_resumeAfterCall = false;
   }
   setRing(false);
-  ui_face_caption("");
+  s_captionDirty = false; s_captionPending = ""; ui_face_caption("");
   WakeWord::setListening(false);
   enterState(AS_CALL);
 }
@@ -255,7 +256,7 @@ void assistant_loop() {
     switch (ev.kind) {
       case VoiceSession::Event::CONNECTED:
         Serial.printf("[ASSIST] session connected in %lu ms\n", (unsigned long)(now - s_sessionStartAt));
-        ui_face_caption("");
+        s_captionDirty = false; s_captionPending = ""; ui_face_caption("");
         ui_face_set_expr(EX_LISTENING);
         s_lastActivity = now;
         enterState(AS_SESSION);
@@ -288,7 +289,8 @@ void assistant_loop() {
         ui_face_set_expr(EX_THINKING);
         break;
       case VoiceSession::Event::TRANSCRIPT:
-        ui_face_caption(ev.text.c_str());
+        // deltas arrive many times a second; redraw the CJK label at most ~4x/s
+        s_captionPending = ev.text; s_captionDirty = true;
         break;
       case VoiceSession::Event::TOOL_CALL:
         s_lastActivity = now;
@@ -313,6 +315,10 @@ void assistant_loop() {
       break;
 
     case AS_SESSION: {
+      if (s_captionDirty && now - s_captionDrawn >= 250) {
+        s_captionDrawn = now; s_captionDirty = false;
+        ui_face_caption(s_captionPending.c_str());
+      }
       if (audio_mode() == AUDIO_IDLE && !audio_prompt_busy()) {
         Serial.printf("[ASSIST] audio -> voice (heap %u)\n", (unsigned)ESP.getFreeHeap());
         audio_set_mode(AUDIO_VOICE);

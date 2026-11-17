@@ -306,7 +306,7 @@ static void netLoop() {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.printf("\n[APP] AICC Phone %s (board %s)\n", FW_VERSION, BOARD_V2 ? "V2" : "V1");
+  Serial.printf("\n[APP] AICC Phone %s (board %s) reset=%d\n", FW_VERSION, BOARD_V2 ? "V2" : "V1", (int)esp_reset_reason());
 
   g_settings.load();
   board_i2c_init();

@@ -602,6 +602,8 @@ String WebSockets::base64_encode(uint8_t * data, size_t length) {
  * @param n size_t byte count
  * @return true if ok
  */
+void (*WebSockets::idleHook)() = nullptr;
+
 bool WebSockets::readCb(WSclient_t * client, uint8_t * out, size_t n, WSreadWaitCb cb) {
 #if (WEBSOCKETS_NETWORK_TYPE == NETWORK_ESP8266_ASYNC)
     if(!client->tcp || !client->tcp->connected()) {
@@ -645,6 +647,7 @@ bool WebSockets::readCb(WSclient_t * client, uint8_t * out, size_t n, WSreadWait
         }
 
         if(!client->tcp->available()) {
+            if(idleHook) idleHook();
             WEBSOCKETS_YIELD_MORE();
             continue;
         }

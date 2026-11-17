@@ -59,7 +59,7 @@ uint32_t lastUserSpeechMs();
 uint32_t lastAiSpeechMs();
 
 // diagnostics
-struct Stats { uint32_t txChunks, rxAudioBytes, events, playUnderruns, playDrops, frames, bytesIn; int playDepthMs; };
+struct Stats { uint32_t txChunks, rxAudioBytes, events, playUnderruns, playDrops, frames, bytesIn, micDrops; int playDepthMs; };
 Stats stats();
 
 }  // namespace VoiceSession

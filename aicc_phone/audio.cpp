@@ -802,11 +802,11 @@ static void audio_task(void *) {
         lastStat = now;
         if (m == AUDIO_VOICE) {
           VoiceSession::Stats vs = VoiceSession::stats();
-          Serial.printf("[VOICE] aec %lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% res=%u%% | tx=%lu rxAudio=%lu depth=%dms under=%lu drop=%lu heap=%u\n",
+          Serial.printf("[VOICE] aec %lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% res=%u%% | tx=%lu rxAudio=%lu depth=%dms under=%lu drop=%lu micdrop=%lu heap=%u\n",
                         (unsigned long)(s_aec.procCount ? s_aec.procUs / s_aec.procCount : 0), (unsigned long)wMaxUs, wLate,
                         wMic, wOut, wRef, wSpk, wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? resFrames * 100 / wFrames : 0,
                         (unsigned long)vs.txChunks, (unsigned long)vs.rxAudioBytes, vs.playDepthMs, (unsigned long)vs.playUnderruns,
-                        (unsigned long)vs.playDrops, (unsigned)ESP.getFreeHeap());
+                        (unsigned long)vs.playDrops, (unsigned long)vs.micDrops, (unsigned)ESP.getFreeHeap());
           s_aec.procUs = 0; s_aec.procCount = 0; s_aec.procMaxUs = 0;
         } else if (s_aec.active() && s_aec.procCount) {
           Serial.printf("[AEC] %lu/%lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% out>5=%u%% res=%u%% micfail=%u wrfail=%u | rtp rx=%lu tx=%lu txfail=%lu gaps=%lu under=%lu drop=%lu depth=%d\n",
