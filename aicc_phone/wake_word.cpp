@@ -99,7 +99,9 @@ void feedWake(const int16_t *pcm, int samples) {
     if (st == WAKENET_DETECTED) {
       Serial.printf("[WAKE] WAKE WORD \"%s\" detect=%luus\n", s_st.wakeWord, (unsigned long)dt);
       post(WAKE_CMD_WAKE, 1.f, s_st.wakeWord);
-      s_wn->clean(s_wnData);
+      // NOTE: do not call s_wn->clean() here. In esp-sr 2.4.6 the wakenet9
+      // model_clean() dereferences a freed convq queue (LoadProhibited at
+      // 0xbaad5678); the detector re-arms itself after a trigger anyway.
       // Stay in STAGE_WAKE until the application opens the window: samples
       // arriving in between (the chime) are discarded by the audio task anyway.
       return;
@@ -181,7 +183,7 @@ bool WakeWord::begin() {
 
   portENTER_CRITICAL(&s_lock);
   strlcpy(s_st.wakeModel, wnName, sizeof(s_st.wakeModel));
-  strlcpy(s_st.wakeWord, ww ? ww : "?", sizeof(s_st.wakeWord));
+  strlcpy(s_st.wakeWord, (ww && strcmp(ww, wnName) != 0) ? ww : "nihaoxiaoan", sizeof(s_st.wakeWord));
   strlcpy(s_st.cmdModel, mnName, sizeof(s_st.cmdModel));
   s_st.error[0] = 0;
   s_st.ready = true;
@@ -201,8 +203,7 @@ bool WakeWord::begin() {
 void WakeWord::setListening(bool on) {
   if (s_listen == on) return;
   s_listen = on;
-  if (s_wnData) s_wn->clean(s_wnData);
-  if (s_mnData) s_mn->clean(s_mnData);
+  if (s_mnData) s_mn->clean(s_mnData);   // (wakenet9 clean() crashes in esp-sr 2.4.6, see feedWake)
   s_wnHave = s_mnHave = 0;
   if (on && s_stage == STAGE_COMMAND) s_stage = STAGE_WAKE;   // a call interrupted the window
   portENTER_CRITICAL(&s_lock);
@@ -228,7 +229,6 @@ void WakeWord::startCommandWindow() {
 void WakeWord::endCommandWindow() {
   if (s_stage != STAGE_COMMAND) return;
   if (s_mnData) s_mn->clean(s_mnData);
-  if (s_wnData) s_wn->clean(s_wnData);
   s_wnHave = s_mnHave = 0;
   s_stage = STAGE_WAKE;
   portENTER_CRITICAL(&s_lock);
