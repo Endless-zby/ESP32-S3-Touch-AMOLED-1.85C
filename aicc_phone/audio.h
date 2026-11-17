@@ -34,6 +34,10 @@ enum AudioPrompt {
 };
 void audio_prompt(uint8_t kind);
 bool audio_prompt_busy();
+// Barge-in (read-and-clear): true when the local esp_vad heard speech on the
+// echo-cancelled signal (the xiaozhi-style trigger; the assistant cancels the reply).
+bool audio_take_barge();
+bool audio_vad_state();   // current local VAD state (true = speech)
 // 0..100 recent mic / speaker levels, for UI meters
 uint8_t audio_mic_level();
 uint8_t audio_spk_level();

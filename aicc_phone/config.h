@@ -71,7 +71,7 @@
 #define DEF_SIP_REGISTER 0
 #define DEF_VOLUME       55
 #define DEF_MIC_GAIN     150     // digital mic gain (%) applied after AEC
-#define DEF_AEC_MODE     1       // 0 off, 1 esp-sr FD low cost (xiaozhi default), 2 VoIP high perf, 3 FD high perf
+#define DEF_AEC_MODE     1       // 0 off, 1 FD low cost (double-talk friendly, NLP default), 2 VoIP high perf, 3 FD high perf (max suppression)
 #define DEF_MIC_SLOT     0       // V2: ES7210 TDM slot used as the voice microphone
 #define DEF_REF_SLOT     1       // V2: ES7210 TDM slot with the DAC loopback (MIC3), 4 = software reference
 #define DEF_REF_DELAY_MS 40      // software reference delay (tune with the lag= value in the serial log)
@@ -79,7 +79,7 @@
 #define DEF_REF_GAIN     14      // ES7210 MIC3 PGA gain code (14 = 37.5 dB; the on-board attenuator is ~-24 dB)
 #define DEF_MIC_PGA      6       // ES7210 MIC1/MIC2 PGA gain code (6 = 18 dB). 30 dB clipped on speaker echo.
 #define DEF_REF_DIG_GAIN 4       // software gain on the reference channel before the AEC (x1..x8)
-#define DEF_RES_SUPPRESS 1       // residual echo suppression after the AEC while the far end is talking
+#define DEF_RES_SUPPRESS 0       // off: esp-sr's NLP already handles the residual (xiaozhi adds no extra suppressor)
 // ---- 唤醒词（ESP-SR WakeNet9，本地）------------------------------------------
 // 模型包在 flash 的 "model" 分区（tools/srmodels/srmodels_cn.bin，由 tools/pack_models.sh 打包）：
 //   wn9_nihaoxiaoan_tts2  唤醒词 "你好小安"（乐鑫免费商用模型，常开）
@@ -88,7 +88,7 @@
 #define WAKE_WORD_TEXT      "你好小安"   // WakeNet9 wn9_nihaoxiaoan_tts2 (tools/srmodels/src)
 #define DEF_WAKE_SENSITIVITY 0       // 0 标准(模型默认阈值) 1 宽松(-0.05) 2 严格(+0.01)
 #define DEF_WAKE_MIC_PGA    10       // 待机监听时 ES7210 PGA code（10 = 30 dB，喇叭安静无削波风险）
-#define AUDIO_CFG_VERSION 4      // bump to reset the audio tuning fields stored in NVS
+#define AUDIO_CFG_VERSION 5      // bump to reset the audio tuning fields stored in NVS
 #define SIP_LOCAL_PORT   5060
 #define RTP_LOCAL_PORT   20000
 
@@ -99,7 +99,7 @@
 #define DEF_AI_OUT_RATE      24000                           // PCM rate of response.audio.delta
 #define DEF_AI_IDLE_SEC      120                             // no speech from either side -> sleep
 #define DEF_AI_EXTRA         ""                              // hotel-specific facts appended to the prompt
-#define VOICE_TURN_DETECTION "smart_turn_v2"
+#define VOICE_TURN_DETECTION "server_vad"       // smart_turn_v2 silently drops fragments as "turn_invalid"; server_vad answers every utterance
 #define VOICE_CONNECT_TIMEOUT_MS 15000
 #define VOICE_PREROLL_MS     240
 

@@ -33,14 +33,9 @@ void reapTask() {
   if (s_task && s_taskDone) { vTaskDeleteWithCaps(s_task); s_task = nullptr; s_taskDone = false; }
 }
 volatile uint32_t s_lastUser = 0;
+uint32_t s_lastSendMs = 0;   // last successful input_audio_buffer.append
+uint32_t s_beginMs = 0;
 Stats s_st = {};
-
-// Reply caption, pulled by the UI thread (see copyTranscript/takeTranscriptDirty).
-// Kept in a fixed buffer so a reply never costs one heap allocation per delta.
-char s_tr[512];
-int s_trLen = 0;
-volatile bool s_trDirty = false;
-portMUX_TYPE s_trMux = portMUX_INITIALIZER_UNLOCKED;
 
 // ---- mic ring: 16 kHz int16, 1 s (oldest dropped beyond 600 ms of backlog) ----
 const int MIC_CAP = 16000 * 1;
@@ -72,38 +67,6 @@ void queueSend(const String &json) {
   if (!s_txq) return;
   String *s = new String(json);
   if (xQueueSend(s_txq, &s, pdMS_TO_TICKS(50)) != pdTRUE) delete s;
-}
-
-// ---- caption buffer (ws task writes, UI thread reads) ----
-void trClear() {
-  portENTER_CRITICAL(&s_trMux);
-  s_trLen = 0; s_tr[0] = 0; s_trDirty = true;
-  portEXIT_CRITICAL(&s_trMux);
-}
-
-void trReplace(const char *s, int n) {
-  if (!s) return;
-  if (n > (int)sizeof(s_tr) - 1) n = sizeof(s_tr) - 1;
-  // do not cut a UTF-8 sequence in half
-  while (n > 0 && ((unsigned char)s[n] & 0xC0) == 0x80) n--;
-  portENTER_CRITICAL(&s_trMux);
-  memcpy(s_tr, s, n); s_tr[n] = 0; s_trLen = n; s_trDirty = true;
-  portEXIT_CRITICAL(&s_trMux);
-}
-
-void trAppend(const char *s, int n) {
-  if (!s || n <= 0) return;
-  portENTER_CRITICAL(&s_trMux);
-  int room = (int)sizeof(s_tr) - 1 - s_trLen;
-  if (room <= 0) { s_trDirty = true; portEXIT_CRITICAL(&s_trMux); return; }
-  if (n > room) {
-    int cut = room;
-    while (cut > 0 && ((unsigned char)s[cut] & 0xC0) == 0x80) cut--;
-    n = cut;
-  }
-  if (n > 0) { memcpy(s_tr + s_trLen, s, n); s_trLen += n; s_tr[s_trLen] = 0; }
-  s_trDirty = true;
-  portEXIT_CRITICAL(&s_trMux);
 }
 
 // ---------------------------------------------------------------------------
@@ -256,14 +219,13 @@ void handleMessage(const char *js, size_t len) {
   if (type != "response.audio_transcript.delta")
     Serial.printf("[VOICE] << %s (%u B) int=%u\n", type.c_str(), (unsigned)len, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
-  if (type == "response.audio_transcript.delta") {
-    String d; if (jsonString(js, "delta", d)) trAppend(d.c_str(), d.length());
+  if (type == "conversation.item.input_audio_transcription.completed") {
+    String t; if (jsonString(js, "transcript", t, 160)) Serial.printf("[VOICE] user said: %s\n", t.c_str());
     return;
   }
-  if (type == "response.audio_transcript.done") {
-    String t; if (jsonString(js, "transcript", t)) trReplace(t.c_str(), t.length());
-    return;
-  }
+  // The reply text is not shown on screen any more (labelling it forced a full
+  // CJK re-layout several times a second); the deltas are simply ignored.
+  if (type == "response.audio_transcript.delta" || type == "response.audio_transcript.done") return;
   if (type == "session.created") {
     queueSend(sessionUpdateJson());
     return;
@@ -271,6 +233,9 @@ void handleMessage(const char *js, size_t len) {
   if (type == "session.updated") {
     s_sessionReady = true;
     s_state = VS_READY;
+    // The uplink watchdog counts from the moment the session can actually send;
+    // counting from begin() makes the TLS handshake itself look like a stall.
+    s_lastSendMs = millis();
     Serial.printf("[VOICE] session ready (%u bytes) heap=%u: %.200s\n", (unsigned)len, (unsigned)ESP.getFreeHeap(), js);
     postEvent(Event::CONNECTED);
     if (s_cfg.greeting.length()) requestResponse(s_cfg.greeting);
@@ -292,9 +257,10 @@ void handleMessage(const char *js, size_t len) {
     if (s_retryCreate) { s_retryCreate = false; queueSend("{\"type\":\"response.create\"}"); }
     return;
   }
-  if (type == "response.created") { s_responseActive = true; s_dropAudio = false; trClear(); return; }
+  if (type == "response.created") { s_responseActive = true; s_dropAudio = false; return; }
   if (type == "response.done") {
     s_responseActive = false;
+    s_dropAudio = false;      // the cancelled response is over; nothing to mute for it
     String st; jsonString(js, "status", st, 32);
     Serial.printf("[VOICE] response.done status=%s\n", st.c_str());
     postEvent(Event::RESPONSE_DONE, st);
@@ -311,6 +277,12 @@ void handleMessage(const char *js, size_t len) {
   }
   if (type == "error") {
     String msg; jsonString(js, "message", msg, 200);
+    if (msg.indexOf("no active response") >= 0) {
+      // Barge-in raced with the end of the reply: the server had already finished
+      // streaming it (audio is generated faster than real time). Harmless.
+      Serial.println("[VOICE] response.cancel: reply had already completed");
+      return;
+    }
     Serial.printf("[VOICE] server error: %.400s\n", js);
     if (msg.indexOf("while user is speaking") >= 0) { s_retryCreate = true; return; }
     if (!s_sessionReady) { s_state = VS_ERROR; postEvent(Event::FAILED, msg.length() ? msg : String("server error")); }
@@ -329,8 +301,9 @@ void onWsEvent(WStype_t t, uint8_t *payload, size_t len) {
       Serial.printf("[VOICE] ws connected (%s) heap=%u\n", (const char *)payload, (unsigned)ESP.getFreeHeap());
       break;
     case WStype_DISCONNECTED:
-      Serial.printf("[VOICE] ws disconnected (state %d) heap=%u min=%u tx=%lu rx=%lu\n", (int)s_state,
-                    (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(), (unsigned long)s_st.txChunks, (unsigned long)s_st.bytesIn);
+      Serial.printf("[VOICE] ws disconnected (state %d) heap=%u min=%u tx=%lu rx=%lu rssi=%d\n", (int)s_state,
+                    (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(), (unsigned long)s_st.txChunks, (unsigned long)s_st.bytesIn,
+                    WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0);
       if (s_state == VS_CONNECTING) { s_state = VS_ERROR; postEvent(Event::FAILED, "connect failed"); }
       else if (s_state == VS_READY) { s_state = VS_ERROR; postEvent(Event::CLOSED); }
       break;
@@ -379,7 +352,13 @@ void sendMicChunk() {
   // small: internal RAM is the scarce resource during a session)
   const int N = 640;
   if (ESP.getFreeHeap() < 24000) return;   // back-pressure: skip this round, the ring keeps the audio
-  if (!s_ws.writable()) { s_sendBusy++; return; }   // TCP send buffer full: do not block the task, the ring keeps the audio
+  // The socket is reported writable only a fraction of the time (the server
+  // streams 26 KB audio frames over the same connection, and the public uplink
+  // stalls for seconds at a time). Never block here: force-writing while the
+  // peer is not draining froze this task for seconds, which also stopped it
+  // from processing incoming events (barge-in). The loop instead polls faster
+  // while a backlog exists, so a short writable window is not missed.
+  if (!s_ws.writable()) { s_sendBusy++; return; }
   static int16_t *pcm = (int16_t *)heap_caps_malloc(N * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!pcm) return;
   xSemaphoreTake(s_ringLock, portMAX_DELAY);
@@ -403,6 +382,7 @@ void sendMicChunk() {
   const uint32_t dt = micros() - t0;
   if (dt > s_sendMaxUs) s_sendMaxUs = dt;
   if (dt > 100000) s_sendSlow++;
+  if (okSend) s_lastSendMs = millis();
   if (!okSend) {
     Serial.printf("[VOICE] sendTXT failed (write stalled >5 s) int=%u largest=%u -> closing\n",
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
@@ -420,6 +400,15 @@ void wsIdleHook() {
   static bool inHook = false;
   if (inHook || !s_sessionReady || !s_ws.isConnected()) return;
   inHook = true;
+  // Control messages (response.cancel, tool results) must not wait for a 26 KB
+  // audio frame to finish arriving: on a weak link that read can take seconds,
+  // and a late cancel leaves the server talking and the turn state confused.
+  String *js = nullptr;
+  while (s_txq && xQueueReceive(s_txq, &js, 0) == pdTRUE) {
+    if (s_ws.isConnected()) s_ws.sendTXT(js->c_str(), js->length());
+    if (js->length() < 80) Serial.printf("[VOICE] >> %s\n", js->c_str());
+    delete js;
+  }
   const uint32_t before = s_st.txChunks;
   sendMicChunk();
   if (s_st.txChunks != before) s_hookSends++;
@@ -449,6 +438,7 @@ void voiceTask(void *) {
     String *js = nullptr;
     while (s_txq && xQueueReceive(s_txq, &js, 0) == pdTRUE) {
       if (s_ws.isConnected()) s_ws.sendTXT(js->c_str(), js->length());
+      if (js->length() < 80) Serial.printf("[VOICE] >> %s\n", js->c_str());
       delete js;
     }
     if (s_sessionReady && s_ws.isConnected()) {
@@ -459,8 +449,9 @@ void voiceTask(void *) {
       if (hi < minInt) minInt = hi;
       if (millis() - lastTxLog > 2000) {
         lastTxLog = millis();
-        Serial.printf("[VOICE] tx=%lu hook=%lu busy=%lu sendmax=%lums slow=%lu | int now=%u min2s=%u largest=%u | total min=%u\n", (unsigned long)s_st.txChunks,
+        Serial.printf("[VOICE] tx=%lu hook=%lu busy=%lu sendmax=%lums slow=%lu stall=%lus | int now=%u min2s=%u largest=%u | total min=%u\n", (unsigned long)s_st.txChunks,
                       (unsigned long)s_hookSends, (unsigned long)s_sendBusy, (unsigned long)(s_sendMaxUs / 1000), (unsigned long)s_sendSlow,
+                      (unsigned long)(s_lastSendMs ? (millis() - s_lastSendMs) / 1000 : 0),
                       (unsigned)hi, (unsigned)minInt, (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL), (unsigned)ESP.getMinFreeHeap());
         minInt = 0xFFFFFFFF; s_sendMaxUs = 0;
       }
@@ -472,7 +463,9 @@ void voiceTask(void *) {
     } else if (s_state == VS_ERROR) {
       break;
     }
-    vTaskDelay(pdMS_TO_TICKS(10));
+    // Poll fast while audio is queued: the send direction is only briefly
+    // writable, and a 10 ms tick would miss most of those windows.
+    vTaskDelay(pdMS_TO_TICKS(s_micCount > 640 ? 2 : 10));
   }
   WebSockets::idleHook = nullptr;
   s_ws.disconnect();
@@ -508,7 +501,6 @@ bool VoiceSession::begin(const Config &cfg) {
   if (!cfg.apiKey.length()) { Serial.println("[VOICE] no API key configured"); s_state = VS_ERROR; postEvent(Event::FAILED, "no api key"); return false; }
   ringsReset();
   memset(&s_st, 0, sizeof(s_st));
-  trClear();
   s_fragLen = 0; s_fragOverflow = false;
   s_dropAudio = false;
   s_sessionReady = false;
@@ -517,6 +509,8 @@ bool VoiceSession::begin(const Config &cfg) {
   s_stopReq = false;
   s_taskDone = false;
   s_lastUser = millis();
+  s_lastSendMs = millis();
+  s_beginMs = millis();
   s_state = VS_CONNECTING;
   // Core 0 next to WiFi; priority between the audio task (12) and loop().
   if (xTaskCreatePinnedToCoreWithCaps(voiceTask, "voice", 16384, nullptr, 6, &s_task, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
@@ -565,6 +559,12 @@ void VoiceSession::requestResponse(const String &instructions) {
             "\"content\":[{\"type\":\"input_text\",\"text\":\"（客人刚唤醒了设备）\"}]}}");
   String j = "{\"type\":\"response.create\",\"response\":{\"instructions\":\"" + jsonEscape(instructions) + "\"}}";
   queueSend(j);
+}
+
+void VoiceSession::bargeIn() {
+  s_dropAudio = true;
+  flushPlayback();
+  if (s_responseActive) queueSend("{\"type\":\"response.cancel\"}");
 }
 
 void VoiceSession::flushPlayback() {
@@ -629,19 +629,10 @@ bool VoiceSession::playbackActive() { return s_playing || s_playCount >= s_prero
 uint32_t VoiceSession::playbackRate() { return s_cfg.outRate; }
 uint32_t VoiceSession::lastUserSpeechMs() { return s_lastUser; }
 
-bool VoiceSession::takeTranscriptDirty() {
-  bool d = s_trDirty;
-  s_trDirty = false;
-  return d;
-}
-
-void VoiceSession::copyTranscript(char *dst, size_t cap) {
-  if (!dst || cap == 0) return;
-  portENTER_CRITICAL(&s_trMux);
-  size_t n = (size_t)s_trLen < cap - 1 ? (size_t)s_trLen : cap - 1;
-  memcpy(dst, s_tr, n);
-  dst[n] = 0;
-  portEXIT_CRITICAL(&s_trMux);
+uint32_t VoiceSession::uplinkStallMs() {
+  if (!s_lastSendMs) return 0;
+  uint32_t now = millis();
+  return now - s_lastSendMs;
 }
 
 VoiceSession::Stats VoiceSession::stats() {

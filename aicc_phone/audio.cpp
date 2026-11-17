@@ -13,6 +13,7 @@
 #include "es8311.h"
 #include "es7210_board.h"
 #include "esp_aec.h"
+#include "esp_vad.h"
 static es8311_handle_t s_es8311 = NULL;
 #endif
 
@@ -47,6 +48,44 @@ static volatile bool s_resSuppress = DEF_RES_SUPPRESS;
 static bool s_codecReady = false;
 static volatile uint8_t s_slotLevel[4] = {0, 0, 0, 0};
 static volatile uint8_t s_micLevel = 0, s_spkLevel = 0;
+// Double-talk measurement only (no action taken): tracks how far the raw
+// microphone rises above the echo path learned while the far end plays
+// (raw/ref ratio floor). Printed as g=/r= so the AEC tuning can be judged from
+// the log; the actual cancellation stays entirely inside esp-sr's AEC.
+static volatile uint16_t s_echoGain = 0;     // learned mic/ref ratio when only echo is present
+static volatile uint8_t s_nearMaxRatio = 0;  // max raw/ref ratio seen in the window
+
+// The xiaozhi-esp32 way: a model VAD (esp_vad, VAD_MODE_0 / 30 ms) runs on the
+// *echo-cancelled* signal; when it reports speech while we are playing, that is
+// the barge-in trigger (their AFE VAD drives the same "abort TTS" path).
+struct Vad {
+  vad_handle_t h = nullptr;
+  int16_t buf[480]; int have = 0;                 // AEC gives 20 ms frames, VAD wants 30 ms
+  volatile vad_state_t state = VAD_SILENCE;
+  bool start() {
+    if (h) return true;
+    // VAD_MODE_0 with 30 ms min speech / 100 ms min noise: xiaozhi's AFE VAD
+    // parameters (vad_min_noise_ms = 100).
+    h = vad_create_with_param(VAD_MODE_0, 16000, 30, 60, 100);
+    have = 0; state = VAD_SILENCE;
+    return h != nullptr;
+  }
+  void stop() {
+    if (h) { vad_destroy(h); h = nullptr; }
+    have = 0; state = VAD_SILENCE;
+  }
+  void push(const int16_t *pcm, int n) {
+    if (!h) return;
+    while (n > 0) {
+      int take = n < (480 - have) ? n : (480 - have);
+      memcpy(buf + have, pcm, take * sizeof(int16_t));
+      have += take; pcm += take; n -= take;
+      if (have == 480) { state = vad_process(h, buf, 16000, 30); have = 0; }
+    }
+  }
+};
+static volatile bool s_bargeFlag = false;      // consumed by the assistant
+static Vad s_vad;
 static RtpSession *s_rtp = NULL;
 static TaskHandle_t s_task = NULL;
 
@@ -141,6 +180,16 @@ void audio_click() { s_click = true; }
 uint8_t audio_mic_level() { return s_micLevel; }
 uint8_t audio_spk_level() { return s_spkLevel; }
 AudioMode audio_mode() { return s_mode; }
+
+// Barge-in (read-and-clear): the local VAD heard speech over the echo-cancelled
+// signal while the assistant was playing. Mirrors xiaozhi's AFE VAD -> abort path.
+bool audio_take_barge() {
+  if (!s_bargeFlag) return false;
+  s_bargeFlag = false;
+  return true;
+}
+
+bool audio_vad_state() { return s_vad.state == VAD_SPEECH; }
 
 void audio_set_mode(AudioMode m) {
   s_mode = m;
@@ -334,6 +383,9 @@ struct Aec {
     if (m == 0) return false;
     // 1 = full-duplex low cost + very aggressive NLP (what xiaozhi-esp32 uses on this board)
     // 2 = VoIP high performance, 3 = full-duplex high performance
+    // The same filter xiaozhi-esp32 runs on this board (AFE_TYPE_FD low cost +
+    // VERYAGGR). Barge-in is not expected to come from the server VAD: the local
+    // esp_vad below listens on the echo-cancelled signal and triggers the cancel.
     aec_mode_t am = AEC_MODE_FD_LOW_COST;
     aec_nlp_level_t nlp = AEC_NLP_LEVEL_VERYAGGR;
     if (m == 2) { am = AEC_MODE_VOIP_HIGH_PERF; nlp = AEC_NLP_LEVEL_AGGR; }
@@ -353,9 +405,11 @@ struct Aec {
     if (chunk <= 0 || chunk > 2048) { Serial.printf("[AEC] bad chunk %d\n", chunk); stop(); return false; }
     int cap = chunk * 2 + FRAME_16K * 4;
     if (!micIn.init(cap) || !refIn.init(cap) || !out.init(cap)) { stop(); return false; }
-    bufMic = (int16_t *)heap_caps_malloc(chunk * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    bufRef = (int16_t *)heap_caps_malloc(chunk * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    bufOut = (int16_t *)heap_caps_malloc(chunk * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    // esp_aec.h: "allocate memory by heap_caps_aligned_alloc()" - the kernels use
+    // aligned (SIMD) loads, and a misaligned buffer is both slower and unsound.
+    bufMic = (int16_t *)heap_caps_aligned_alloc(16, chunk * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    bufRef = (int16_t *)heap_caps_aligned_alloc(16, chunk * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    bufOut = (int16_t *)heap_caps_aligned_alloc(16, chunk * sizeof(int16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!bufMic || !bufRef || !bufOut) { stop(); return false; }
     mode = m;
     procUs = procMaxUs = procCount = 0;
@@ -487,6 +541,7 @@ static void audio_task(void *) {
   // 2 s window statistics (peak of per-frame peaks)
   uint8_t wSlot[4] = {0, 0, 0, 0}, wMic = 0, wOut = 0, wRef = 0, wSpk = 0;
   uint16_t wFrames = 0, wFarActive = 0, wNearOut = 0;   // frames with speaker active / with AEC output > 5%
+  uint16_t wVad = 0;         // times the local VAD reported speech over the AEC output
   uint32_t farHold = 0;      // ms since the far end was last active (counts down)
   uint32_t wMaxUs = 0;       // longest frame processing time in the window
   uint16_t wLate = 0;        // frames that took longer than 20 ms
@@ -523,9 +578,13 @@ static void audio_task(void *) {
       if (m == AUDIO_CALL || m == AUDIO_VOICE) {
         memset(s_playHist16, 0, PLAY_HIST_16K * sizeof(int16_t));
         s_playPos16 = 0;
+        s_echoGain = 0; s_nearMaxRatio = 0;
         if (s_aecMode != 0) s_aec.start(s_aecMode);
+        if (m == AUDIO_VOICE) { s_bargeFlag = false; s_vad.start(); }
+        else s_vad.stop();
       } else if (s_aec.active()) {
         s_aec.stop();
+        s_vad.stop();
       }
 #endif
       last = m;
@@ -627,6 +686,15 @@ static void audio_task(void *) {
         if (s_aec.process(mic16, ref16, clean16)) src = clean16;
         else memset(clean16, 0, sizeof(clean16)), src = clean16;  // priming: send silence for the first chunk
         aecUsed = true;
+        // Barge-in: the local VAD hears the guest over the echo-cancelled signal
+        // and stops the reply without waiting for the server (xiaozhi's flow).
+        if (m == AUDIO_VOICE && s_vad.h) {
+          // Rising edge only: after a barge-in the guest keeps talking ("继续讲"),
+          // and a level-triggered flag would cancel the very reply he asked for.
+          const bool wasSpeaking = s_vad.state == VAD_SPEECH;
+          s_vad.push(clean16, FRAME_16K);
+          if (!wasSpeaking && s_vad.state == VAD_SPEECH && !s_bargeFlag) { s_bargeFlag = true; wVad++; }
+        }
         // Residual echo suppression. Only the *quiet* tail of a loud far end is
         // attenuated: the previous "output 9.5 dB below the raw mic" test also
         // caught double-talk (the raw mic is dominated by echo, so real near-end
@@ -638,6 +706,15 @@ static void audio_task(void *) {
             resFrames++;
           }
         }
+      }
+      // Double-talk measurement (see s_echoGain): how much louder than the
+      // learned echo path the raw microphone is. No cancellation decision is
+      // taken from it.
+      if (m == AUDIO_VOICE && s_aec.active() && refLevel > 6) {
+        const uint16_t ratio = (uint16_t)((uint32_t)rawMicLevel * 100 / refLevel);
+        if (ratio > s_nearMaxRatio) s_nearMaxRatio = ratio > 255 ? 255 : (uint8_t)ratio;
+        if (s_echoGain == 0 || ratio < s_echoGain) s_echoGain = ratio;
+        else if (s_echoGain < 400) s_echoGain++;
       }
       for (int k = 0; k < 4; k++) if (s_slotLevel[k] > wSlot[k]) wSlot[k] = s_slotLevel[k];
       if (rawMicLevel > wMic) wMic = rawMicLevel;
@@ -733,10 +810,10 @@ static void audio_task(void *) {
         lastStat = now;
         if (m == AUDIO_VOICE) {
           VoiceSession::Stats vs = VoiceSession::stats();
-          Serial.printf("[VOICE] aec %lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% res=%u%% refclip=%u%% | tx=%lu rxAudio=%lu depth=%dms under=%lu drop=%lu micdrop=%lu heap=%u\n",
+          Serial.printf("[VOICE] aec %lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% res=%u%% refclip=%u%% g=%u r=%u vad=%u | tx=%lu rxAudio=%lu depth=%dms under=%lu drop=%lu micdrop=%lu heap=%u\n",
                         (unsigned long)(s_aec.procCount ? s_aec.procUs / s_aec.procCount : 0), (unsigned long)wMaxUs, wLate,
                         wMic, wOut, wRef, wSpk, wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? resFrames * 100 / wFrames : 0,
-                        wFrames ? refClip * 100 / wFrames : 0,
+                        wFrames ? refClip * 100 / wFrames : 0, (unsigned)s_echoGain, (unsigned)s_nearMaxRatio, (unsigned)wVad,
                         (unsigned long)vs.txChunks, (unsigned long)vs.rxAudioBytes, vs.playDepthMs, (unsigned long)vs.playUnderruns,
                         (unsigned long)vs.playDrops, (unsigned long)vs.micDrops, (unsigned)ESP.getFreeHeap());
           s_aec.procUs = 0; s_aec.procCount = 0; s_aec.procMaxUs = 0;
@@ -760,7 +837,7 @@ static void audio_task(void *) {
           s_rtp->statsReset();
         }
         memset(wSlot, 0, sizeof(wSlot)); wMic = wOut = wRef = wSpk = 0; wFrames = wFarActive = wNearOut = 0; resFrames = 0; wMaxUs = 0; wLate = 0;
-        micFails = 0; wrFails = 0; refClip = 0;
+        micFails = 0; wrFails = 0; refClip = 0; s_nearMaxRatio = 0; wVad = 0;
       }
 #endif
       continue;

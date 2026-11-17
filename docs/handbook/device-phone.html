@@ -136,7 +136,7 @@
       <div class="card"><h3><span class="ico">✋</span>免提双向可打断</h3><p>板载双麦克风 + 硬件回声参考通道 + 乐鑫 AEC 算法，喇叭放得再响也不会把自己的声音传回去；AI 说话时你可以直接插话。</p></div>
       <div class="card"><h3><span class="ico">🔢</span>手动拨号盘</h3><p>设置页里藏着完整的 12 键拨号盘，可以拨任意分机或号码（需服务器侧放行），不只是前台。</p></div>
       <div class="card"><h3><span class="ico">📲</span>可接来电</h3><p>注册模式下前台或坐席可以回拨客房，设备振铃、屏幕显示来电方，点绿色接听、红色拒接。</p></div>
-      <div class="card"><h3><span class="ico">👀</span>有表情的待机脸</h3><p>待机时显示一双会眨眼、会跟手指看的眼睛，顶部时钟、底部电量。唤醒后屏幕边缘亮起紫色呼吸光环表示"在听"。</p></div>
+      <div class="card"><h3><span class="ico">👀</span>有表情的待机脸</h3><p>待机时显示一双会眨眼、会跟手指看的眼睛，顶部时钟、底部电量。被唤醒后眼睛的表情会跟着状态变（倾听、思考、说话、困倦）。</p></div>
       <div class="card"><h3><span class="ico">🔊</span>音量与亮度</h3><p>通话中按钮调音量，待机时语音调音量和亮度，设置页里有整行滑条。亮度最低 20%，不会调到全黑。</p></div>
       <div class="card"><h3><span class="ico">📶</span>手机配网</h3><p>首次使用用手机连设备热点，网页里选 Wi-Fi 输密码即可。同一网页还能改前台号码、本机号码、音量等，局域网内随时可打开。</p></div>
       <div class="card"><h3><span class="ico">🔋</span>电池可选</h3><p>Type-C 供电；BOX 版内置电池，可移动放置。屏幕底部显示电量，低于 20% 变红。</p></div>
@@ -164,18 +164,21 @@
     <div class="flow">
       <div class="card"><h3><span class="ico">1</span>休眠</h3><p>屏幕黑着，只有麦克风在听唤醒词。Wi-Fi 和电话线路仍然在线，前台回拨照样能响。</p></div>
       <div class="card"><h3><span class="ico">2</span>唤醒</h3><p>说 <span class="say wake">你好小安</span>，设备播放上扬双音、屏幕亮起，连接语音模型，小安先问候一句"您好，有什么可以帮您？"</p></div>
-      <div class="card"><h3><span class="ico">3</span>对话</h3><p>直接说话即可，不用再喊唤醒词。小安说话时屏幕边缘亮<b>紫色呼吸光环</b>，回复文字显示在眼睛下方；它说到一半你也可以直接插话。</p></div>
+      <div class="card"><h3><span class="ico">3</span>对话</h3><p>直接说话即可，不用再喊唤醒词。小安说话时眼睛换成"说话"表情，回复文字显示在眼睛下方；它说到一半你也可以直接插话。</p></div>
       <div class="card"><h3><span class="ico">4</span>休眠</h3><p>连续 2 分钟双方都没说话，或你说"没事了/再见"，设备道别后关屏休眠，回到只听唤醒词的状态。</p></div>
     </div>
 
     <h3 style="margin-top:30px">小安能做什么</h3>
+    <p class="sub">小安是客房里的<b>通用知识助手</b>：常识、历史、经济、人文、天文地理、科技、旅行、语言都能聊，也能算数、翻译、出主意。
+      酒店自己的业务（早餐与退房时间、房价账单、送物维修、投诉叫车、转人工）不归它管——那属于前台，由电话那头的酒店客服 AI 回答。</p>
     <table>
       <thead><tr><th style="width:20%">你可以说</th><th style="width:40%">举例</th><th>设备反应</th></tr></thead>
       <tbody>
         <tr><td><span class="dot" style="background:#4ade80"></span>找前台 / 要服务</td><td>"帮我找下前台""送两瓶水上来""空调不制冷""我要退房""帮我叫辆车"</td><td>小安回答"正在为您接通前台"，随后自动拨打前台号码，屏幕切到通话页。挂断后回到对话。</td></tr>
         <tr><td><span class="dot" style="background:#7cc4ff"></span>调音量</td><td>"声音大一点""太吵了""音量调到 50"</td><td>立即调整并用一句话确认，屏幕弹出"音量 xx%"。</td></tr>
         <tr><td><span class="dot" style="background:#fbbf24"></span>调亮度</td><td>"屏幕太亮了""暗一点""亮度最高"</td><td>立即调整并确认，弹出"亮度 xx%"，最低 20%。</td></tr>
-        <tr><td><span class="dot" style="background:#b388ff"></span>问问题</td><td>"几点退房""早餐在哪""Wi-Fi 密码多少""附近有什么好吃的"</td><td>按配置页填写的酒店信息回答；不知道的会建议联系前台，不会编造。</td></tr>
+        <tr><td><span class="dot" style="background:#b388ff"></span>聊知识 / 问常识</td><td>"宋朝为什么会迁都临安""黑洞是怎么形成的""怎么挑西瓜""明天适合去看海吗""这句话用英语怎么说"</td><td>小安直接用自己的知识回答，一到三句话，可以追问；不确定的会直说不知道，不编造。</td></tr>
+        <tr><td><span class="dot" style="background:#38bdf8"></span>酒店的事</td><td>"几点退房""早餐在哪儿""房价多少""能开个发票吗"</td><td>这些属于酒店业务：小安说"正在为您接通前台"，拨号后由<b>电话那头的酒店客服 AI</b>回答。配置页里填的酒店信息只作为参考线索。</td></tr>
         <tr><td><span class="dot" style="background:#93a0b5"></span>结束</td><td>"没事了""谢谢，不用了""再见"</td><td>简短道别，关屏休眠。</td></tr>
       </tbody>
     </table>
@@ -221,7 +224,7 @@
         <tr><td><span class="dot" style="background:#93a0b5"></span>启动页</td><td>AICC Phone + 转圈 + 当前步骤（初始化音频 / 正在连接网络）</td><td>上电自动，几秒后离开</td></tr>
         <tr><td><span class="dot" style="background:#60a5fa"></span>配网页</td><td>Wi-Fi 图标、热点名、密码、网址、连接进度</td><td>无 Wi-Fi 配置或连接失败时自动进入；配网成功自动离开</td></tr>
         <tr><td><span class="dot" style="background:#93a0b5"></span>休眠</td><td>屏幕全黑，功放关闭</td><td>两分钟无人说话自动进入；喊"你好小安"、触摸屏幕、按 BOOT、来电都会亮屏</td></tr>
-        <tr><td><span class="dot" style="background:#4ade80"></span>待机脸 / 对话</td><td>一双眼睛 + 顶部时钟 + 底部电量胶囊；小安说话时边缘紫色呼吸光环，眼睛下方显示它说的话</td><td>唤醒后的默认页。拖动手指眼睛跟着看，长按闭眼</td></tr>
+        <tr><td><span class="dot" style="background:#4ade80"></span>待机脸 / 对话</td><td>一双眼睛 + 顶部时钟 + 底部电量胶囊；表情随状态变化，眼睛下方显示它说的话</td><td>唤醒后的默认页。拖动手指眼睛跟着看，长按闭眼</td></tr>
         <tr><td><span class="dot" style="background:#7cc4ff"></span>设置页</td><td>亮度、音量两条整行滑条；设备信息、拨号盘、重新配网、返回</td><td>按 BOOT 进入，再按 BOOT 或点"返回"退出；上下滑动翻看</td></tr>
         <tr><td><span class="dot" style="background:#7cc4ff"></span>设备信息</td><td>本机 IP、服务器地址、SIP 状态（直连模式 / 已注册 / 注册失败 / 网络断开）、固件版本、热点名</td><td>设置页 → 设备信息；BOOT 或"返回"退回</td></tr>
         <tr><td><span class="dot" style="background:#4ade80"></span>拨号盘</td><td>顶部网络/SIP 状态、号码显示区（空时灰字显示预设前台号码）、12 键、退格 / 呼叫 / 设置</td><td>设置页 → 拨号盘；左上返回或 BOOT 回到待机脸</td></tr>

@@ -699,17 +699,29 @@ void SipClient::loop() {
     sendRegister("");
     _nextRegisterAt = now + 60000;  // will be rescheduled by the 200 OK
   }
-  if (!_txOpt.active && (int32_t)(now - _nextOptionsAt) >= 0) {
+  if (_hbOn && !_txOpt.active && (int32_t)(now - _nextOptionsAt) >= 0) {
     sendOptionsProbe();
     _nextOptionsAt = now + 60000;
   }
-  if ((int32_t)(now - _nextKeepaliveAt) >= 0) {
+  if (_hbOn && (int32_t)(now - _nextKeepaliveAt) >= 0) {
     _nextKeepaliveAt = now + 20000;
     if (_serverResolved && _udp.beginPacket(_serverIp, _cfg.port)) {
       _udp.write((const uint8_t *)"\r\n\r\n", 4);
       _udp.endPacket();
     }
   }
+}
+
+void SipClient::setHeartbeat(bool on) {
+  if (_hbOn == on) return;
+  _hbOn = on;
+  if (on) {
+    // Wake: refresh the source port the NAT has for us right away, so the next
+    // INVITE carries a Contact that can actually be reached.
+    _nextOptionsAt = 0;
+    _nextKeepaliveAt = 0;
+  }
+  Serial.printf("[SIP] heartbeat %s\n", on ? "on (public address refresh)" : "off (sleeping)");
 }
 
 void SipClient::handlePacket(const char *data, int len, IPAddress from, uint16_t fromPort) {

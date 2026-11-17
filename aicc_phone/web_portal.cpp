@@ -56,7 +56,7 @@ button.sec{background:#3a4152}button.warn{background:#b23b3b}
 <label>显示名称</label><input id="dname">
 <label>注册到服务器</label><select id="sreg"><option value="0">否（直接呼叫）</option><option value="1">是</option></select>
 <div class="row"><div><label>音量 (0-100)</label><input id="vol" type="number" min="0" max="100"></div><div><label>麦克风增益 (%)</label><input id="mic" type="number" min="0" max="200"></div></div>
-<label>回声消除 (AEC)</label><select id="aec"><option value="1">全双工·低功耗（推荐，同 xiaozhi）</option><option value="3">全双工·高性能</option><option value="2">VoIP·高性能</option><option value="0">关闭</option></select>
+<label>回声消除 (AEC)</label><select id="aec"><option value="1">全双工·低功耗（推荐，可插话打断）</option><option value="3">全双工·高性能（回声抑制最强，可能压住较弱的插话）</option><option value="2">VoIP·高性能</option><option value="0">关闭（半双工）</option></select>
 <div class="row"><div><label>麦克风通道 (0-3)</label><input id="mslot" type="number" min="0" max="3"></div><div><label>回声参考 (0-3=硬件通道, 4=软件)</label><input id="rslot" type="number" min="0" max="4"></div></div>
 <div class="row"><div><label>软件参考延迟 (ms)</label><input id="rdelay" type="number" min="0" max="400"></div><div><label>AEC 滤波器长度 (1-16)</label><input id="afilt" type="number" min="1" max="16"></div></div>
 <div class="row"><div><label>参考通道模拟增益 (0-14)</label><input id="rgain" type="number" min="0" max="14"></div><div><label>参考通道软件增益 (x1-x8)</label><input id="rdig" type="number" min="1" max="8"></div></div>
@@ -69,7 +69,7 @@ button.sec{background:#3a4152}button.warn{background:#b23b3b}
 <div class="row"><div><label>模型</label><input id="aimodel"></div><div><label>音色（留空=默认）</label><input id="aivoice" placeholder="longanqian_v3.1"></div></div>
 <label>接入地址（主机名）</label><input id="aihost" placeholder="dashscope.aliyuncs.com 或 <WorkspaceId>.cn-beijing.maas.aliyuncs.com">
 <div class="row"><div><label>回复音频采样率</label><select id="airate"><option value="24000">24000</option><option value="16000">16000</option><option value="48000">48000</option><option value="8000">8000</option></select></div><div><label>无人说话多久休眠 (秒)</label><input id="aiidle" type="number" min="20" max="3600"></div></div>
-<label>酒店信息（附加到提示词，例如：酒店名、Wi-Fi 密码、早餐与退房时间）</label><input id="aiextra" placeholder="军阅国际酒店，早餐 7:00-10:00 在二楼，退房时间 12:00">
+<label>本机附加信息（附加到提示词，例如酒店名、Wi-Fi 名称；酒店政策的正式回答请交给前台客服 AI）</label><input id="aiextra" placeholder="军阅国际酒店，Wi-Fi: Junyue-Guest / 密码 88888888">
 <button onclick="saveSip()">保存并重启</button>
 </div>
 <div class="card"><h2>设备</h2>

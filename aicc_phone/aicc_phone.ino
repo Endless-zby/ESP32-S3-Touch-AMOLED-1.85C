@@ -397,6 +397,16 @@ void loop() {
   if (WakeWord::consume()) assistant_on_wake_word();
   assistant_loop();
 
+  // Not registered to FreeSWITCH: while the device is asleep there is nothing to
+  // keep alive, so stop the OPTIONS probe and the NAT keepalive. Waking turns it
+  // back on and refreshes the public address before the guest can dial.
+  {
+    static bool hbOn = true;
+    const bool sleeping = assistant_state() == AS_SLEEP && ui_screen_asleep();
+    const bool want = !(sleeping && !g_settings.sipRegister);
+    if (want != hbOn) { hbOn = want; g_sip.setHeartbeat(want); }
+  }
+
   // BOOT (GPIO0, active low): open/close the settings page.
   {
     static bool bootWas = false;
@@ -467,7 +477,9 @@ void loop() {
   static uint32_t lastHeapLog = 0;
   if (now - lastHeapLog > 30000) {
     lastHeapLog = now;
-    Serial.printf("[APP] heap free=%u min=%u psram=%u\n", (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(), (unsigned)ESP.getFreePsram());
+    Serial.printf("[APP] heap free=%u min=%u psram=%u rssi=%d\n", (unsigned)ESP.getFreeHeap(),
+                (unsigned)ESP.getMinFreeHeap(), (unsigned)ESP.getFreePsram(),
+                WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0);
   }
 
   // media watchdog: no RTP for 15 s during a connected call -> hang up

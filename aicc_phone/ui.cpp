@@ -14,7 +14,6 @@
 
 LV_FONT_DECLARE(font_cn_18);
 LV_FONT_DECLARE(font_cn_24);
-LV_FONT_DECLARE(font_cjk_16);
 
 static UiCallbacks s_cb;
 static UiScreen s_screen = UI_BOOT;
@@ -68,8 +67,6 @@ static int s_battPct = -1;
 // deflection after ~95 px), the gaze holds for 200 ms, and a long press closes
 // the eyes - same behaviour as the reference PetEyes/HotelPet sketches.
 static bool s_faceTouch = false, s_faceLong = false, s_gazeActive = false;
-static bool s_listenRing = false;
-static bool s_ringDrawn = false;
 static int16_t s_faceStartX = 0, s_faceStartY = 0;
 static uint32_t s_gazeAt = 0;
 
@@ -646,21 +643,6 @@ static void face_timer_cb(lv_timer_t *) {
     s_gazeActive = false;
     s_face.setGazeOverride(false, 0, 0);   // back to the idle gaze wander
   }
-  if (s_listenRing) {
-    static uint32_t lastRing = 0;
-    if (now - lastRing >= 60) {                      // ~16 fps is plenty for a breath
-      lastRing = now;
-      const float ph = (float)(now % 1600) * (2.f * (float)M_PI / 1600.f);   // 1.6 s breath
-      const float b = 0.5f + 0.5f * sinf(ph);
-      s_faceR.ringDraw((uint8_t)(50.f + 205.f * b));
-      lv_obj_invalidate(face_canvas);
-      s_ringDrawn = true;
-    }
-  } else if (s_ringDrawn) {
-    s_ringDrawn = false;
-    s_faceR.ringDraw(0);                             // clear the band
-    lv_obj_invalidate(face_canvas);
-  }
   if (now - lastClock >= 1000) { lastClock = now; face_clock_update(); }
   if (now - s_battAt > 5000) { s_battAt = now; face_battery_update(false); }
 }
@@ -676,7 +658,6 @@ static void build_face() {
   }
   memset(s_faceBuf, 0, bytes);
   if (!s_faceR.begin(s_faceBuf, LCD_W, LCD_H)) Serial.println("[UI] face renderer init failed");
-  if (!s_faceR.beginRing()) Serial.println("[UI] face ring init failed");
   memset(&s_faceDsc, 0, sizeof(s_faceDsc));
   s_faceDsc.header.magic = LV_IMAGE_HEADER_MAGIC;
   s_faceDsc.header.cf = LV_COLOR_FORMAT_RGB565;
@@ -697,7 +678,10 @@ static void build_face() {
 
   face_clock = mk_label(scr_face, "--:--", &lv_font_montserrat_24, COL_DIM, LV_ALIGN_TOP_MID, 0, 12);
   // assistant transcript: two lines inside the round glass, above the battery pill
-  face_caption = mk_label(scr_face, "", &font_cjk_16, COL_TEXT, LV_ALIGN_BOTTOM_MID, 0, -62);
+  // Status line only ("connecting", "calling the front desk", "offline"). The
+  // streaming transcript was removed: it forced a CJK label re-layout 4x/s and
+  // pulled in the whole GB2312 font.
+  face_caption = mk_label(scr_face, "", &font_cn_18, COL_TEXT, LV_ALIGN_BOTTOM_MID, 0, -62);
   lv_obj_set_width(face_caption, 250);
   lv_obj_set_style_text_align(face_caption, LV_TEXT_ALIGN_CENTER, 0);
   lv_label_set_long_mode(face_caption, LV_LABEL_LONG_WRAP);
@@ -895,24 +879,10 @@ void ui_settings_back() {
   else ui_show_face();
 }
 
-void ui_face_listening(bool on) {
-  if (s_listenRing == on) return;
-  s_listenRing = on;
-  Serial.printf("[UI] speaking ring %s\n", on ? "on" : "off");
-}
-
 void ui_face_caption(const char *text) {
   if (!face_caption) return;
   if (!text || !*text) { lv_obj_add_flag(face_caption, LV_OBJ_FLAG_HIDDEN); return; }
-  // keep the tail: the newest words matter most on a two-line strip
-  String t = text;
-  const int maxBytes = 96;   // ~32 CJK chars = two lines of 16 at 16 px
-  if ((int)t.length() > maxBytes) {
-    int cut = t.length() - maxBytes;
-    while (cut < (int)t.length() && ((uint8_t)t[cut] & 0xC0) == 0x80) cut++;   // utf-8 boundary
-    t = "…" + t.substring(cut);
-  }
-  lv_label_set_text(face_caption, t.c_str());
+  lv_label_set_text(face_caption, text);
   lv_obj_clear_flag(face_caption, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -920,7 +890,6 @@ void ui_screen_sleep(bool sleep) {
   if (s_asleep == sleep) return;
   s_asleep = sleep;
   if (sleep) {
-    ui_face_listening(false);
     ui_face_caption("");
     backlight_set(0);
     display_on(false);

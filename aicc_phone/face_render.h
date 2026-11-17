@@ -42,10 +42,6 @@ class FaceRenderer {
   // Returns the number of rectangles (0..maxOut).
   int render(const EyeShape eyes[2], const BrowShape brows[2], IRect out[], int maxOut);
   void resetDirty();    // forget previous shapes (after a full clear / screen show)
-  // Edge breathing light: a purple band hugging the rim that fades toward the
-  // centre over ~2 mm (2 mm is ~15 px on the 1.85" 360 px panel).
-  bool beginRing();
-  void ringDraw(uint8_t level);   // 0 clears the band, 255 is full brightness
   uint32_t lastPixels() const { return _lastPixels; }
 
  private:
@@ -57,8 +53,6 @@ class FaceRenderer {
   uint16_t _lut[256];
   uint8_t *_row = nullptr;
   uint32_t _lastPixels = 0;
-  uint8_t *_ringMask = nullptr;      // radial gradient mask, 0 at the inner edge
-  uint16_t _ringLut[256] = {};       // purple scaled by intensity
   IRect _prev[FACE_SHAPE_COUNT];
 
   EyeShape scEye(const EyeShape &e) const;

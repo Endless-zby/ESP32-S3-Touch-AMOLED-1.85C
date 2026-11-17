@@ -72,13 +72,19 @@ tools/monitor.sh        # 115200 串口日志
 
 ## 语音助手「小安」（Qwen Realtime 直连）
 
+- **角色**：客房里的**通用知识助手**——生活常识、饮食健康、历史、经济、人文艺术、天文地理、科学技术、旅行见闻、
+  语言学习都能聊，也能做简单计算、翻译、出主意（提示词见 `assistant.cpp` 的 `buildInstructions()`）。
+  **酒店自己的业务与政策**（早餐/退房时间、房型房价、账单、送物、维修、投诉、叫车、转人工）不在这里回答，
+  而是调 `call_front_desk` 拨通前台，由电话那头的**酒店客服 AI** 负责。
 - **唤醒**：本地 WakeNet9 "你好小安"（`wn9_nihaoxiaoan_tts2`，乐鑫免费商用模型），休眠时常开。命令词模型已不再使用。
 - **对话**：唤醒后播放提示音并与百炼 `qwen-audio-3.1-realtime-flash` 建立 WebSocket 会话（`voice_session.cpp`），
   `smart_turn_v2` 轮次检测，麦克风经 AEC 后以 16 kHz PCM 上传，回复音频（默认 24 kHz）重采样后播放，可随时打断。
-  AI 说话时屏幕边缘亮紫色呼吸光环，回复文字滚动显示在眼睛下方（全 GB2312 字体 `font_cjk_16.c`）。
+  回复文字滚动显示在眼睛下方（全 GB2312 字体 `font_cjk_16.c`）；表情随状态切换（倾听/思考/说话/困倦）。
 - **工具**（function calling，`assistant.cpp`）：`set_volume`、`set_brightness`、`call_front_desk`（关闭会话后用 SIP 拨前台，
   通话结束自动恢复对话）、`end_conversation`。
-- **休眠**：双方连续 `aiIdleSec`（默认 120 s）无人说话 → 关闭会话、关屏关功放，只保留 Wi-Fi、SIP 心跳和唤醒词。
+- **休眠**：双方连续 `aiIdleSec`（默认 120 s）无人说话 → 关闭会话、关屏关功放，只保留 Wi-Fi 和唤醒词。
+  未注册模式（默认）下休眠时**不再发 SIP OPTIONS 心跳和 UDP 保活**——设备没有注册到 FreeSWITCH，
+  没有需要维持的 NAT 映射；唤醒时立即补一次 OPTIONS，刷新公网地址后再拨号。注册模式下心跳照常，以便接来电。
   触摸屏幕、按 BOOT、来电都会亮屏。
 - **配置**（网页"语音助手"卡片）：API Key、模型、音色、接入主机名、回复采样率、休眠秒数、酒店信息（附加到提示词）。
   API Key 只存在设备 NVS 里；正式部署前建议改为经服务器中转。

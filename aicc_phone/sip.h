@@ -62,6 +62,12 @@ class SipClient {
   void answer();
   void reject();
 
+  // OPTIONS probe + UDP NAT keepalive. Turned off while the device sleeps: it is
+  // not registered to FreeSWITCH, so there is nothing to keep alive. Enabling it
+  // refreshes the public address immediately (wake, before a call is dialed).
+  void setHeartbeat(bool on);
+  bool heartbeat() const { return _hbOn; }
+
   bool isIdle() const { return _call == SIP_CALL_IDLE; }
   SipCallState callState() const { return _call; }
   SipRegState regState() const { return _reg; }
@@ -132,6 +138,7 @@ class SipClient {
   uint32_t _nextRegisterAt = 0;
   uint32_t _nextOptionsAt = 0;
   uint32_t _nextKeepaliveAt = 0;
+  bool _hbOn = true;
   String _optCallId;
 
   char _rx[2048];

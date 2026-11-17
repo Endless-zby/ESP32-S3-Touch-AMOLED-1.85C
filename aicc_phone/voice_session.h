@@ -45,6 +45,9 @@ void sendToolResult(const String &callId, const String &outputJson);
 void requestResponse(const String &instructions);
 // Drop everything buffered for playback (barge-in).
 void flushPlayback();
+// Barge-in: stop the current reply (drop buffered + in-flight audio, cancel the
+// response). Triggered by the local VAD on the echo-cancelled signal.
+void bargeIn();
 
 // ---- audio-task side ----
 void pushMic(const int16_t *pcm16k, int samples);          // after AEC
@@ -55,10 +58,10 @@ uint32_t playbackRate();
 // activity timestamp (millis) for the idle timer
 uint32_t lastUserSpeechMs();
 
-// Reply caption. The ws task keeps it in a fixed buffer; the UI polls it at its
-// own rate (4x/s) instead of paying one String per transcript delta.
-bool takeTranscriptDirty();                 // true once per change
-void copyTranscript(char *dst, size_t cap); // NUL-terminated, may be empty
+// ms since the last successful input_audio_buffer.append (0 on a fresh session).
+// A healthy session appends every ~40 ms, so a large value means the uplink is
+// stalled even though isConnected() still says true.
+uint32_t uplinkStallMs();
 
 // diagnostics
 struct Stats { uint32_t txChunks, rxAudioBytes, events, playUnderruns, playDrops, bytesIn, micDrops; int playDepthMs; };
