@@ -88,8 +88,8 @@
 #define WAKE_WORD_ENABLED   1
 #define WAKE_WORD_TEXT      "你好小安"   // WakeNet9 wn9_nihaoxiaoan_tts2 (tools/srmodels/src)
 #define WAKE_MN_TIMEOUT_MS  6000     // MultiNet 自身静音超时（窗口由应用层 kAwakeWindowMs 控制）
-#define WAKE_DET_THRESHOLD  0.35f    // MultiNet 内部检测阈值（命令词只在唤醒窗口内识别，可以比以前严）
-#define WAKE_MIN_PROB       0.35f    // 命令词置信度下限
+#define WAKE_DET_THRESHOLD  0.20f    // MultiNet 内部检测阈值（真机：呼叫前台 prob 约 0.36，0.35 会漏）
+#define WAKE_MIN_PROB       0.20f    // 命令词置信度下限（只在唤醒窗口内生效）
 #define DEF_WAKE_SENSITIVITY 0       // 0 标准(模型默认阈值) 1 宽松(-0.05) 2 严格(+0.01)
 #define DEF_WAKE_MIC_PGA    10       // 待机监听时 ES7210 PGA code（10 = 30 dB，喇叭安静无削波风险）
 #define AUDIO_CFG_VERSION 4      // bump to reset the audio tuning fields stored in NVS
