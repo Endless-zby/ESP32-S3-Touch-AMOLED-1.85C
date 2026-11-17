@@ -40,7 +40,7 @@ volatile bool s_playing = false;
 int s_prerollSamples = 0;
 
 // fragment reassembly for frames larger than the lib's 15 KB frame limit
-char *s_frag = nullptr; size_t s_fragLen = 0; const size_t FRAG_CAP = 96 * 1024;
+char *s_frag = nullptr; size_t s_fragLen = 0; const size_t FRAG_CAP = 256 * 1024;
 
 void postEvent(Event::Kind k, const String &text = String(), const String &name = String(),
                const String &args = String(), const String &callId = String()) {

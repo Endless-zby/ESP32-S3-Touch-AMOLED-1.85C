@@ -13,6 +13,6 @@ mkdir -p "$OUT"
 # versions in one image would resolve aec_*/afe_* symbols from whichever archive
 # the linker happens to pick first. The sketch's partitions.csv adds the "model"
 # partition used by esp_srmodel_init("model").
-"$CLI" compile --fqbn "$FQBN" --build-path "$OUT" "$ROOT/aicc_phone" "$@"
+"$CLI" compile --fqbn "$FQBN" --build-path "$OUT" --library "$ROOT/libs/WebSockets" "$ROOT/aicc_phone" "$@"
 echo
 echo "Binaries: $OUT/aicc_phone.ino.bin  (merged: $OUT/aicc_phone.ino.merged.bin)"
