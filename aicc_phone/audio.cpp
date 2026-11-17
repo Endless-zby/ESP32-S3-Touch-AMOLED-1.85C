@@ -136,9 +136,7 @@ void audio_set_mic_pga(uint8_t code) {
 }
 void audio_set_ref_dig_gain(uint8_t x) { s_refDigGain = x < 1 ? 1 : (x > 8 ? 8 : x); }
 void audio_set_res_suppress(bool on) { s_resSuppress = on; }
-uint8_t audio_aec_mode() { return s_aecMode; }
 void audio_set_mute(bool m) { s_mute = m; }
-bool audio_is_muted() { return s_mute; }
 void audio_click() { s_click = true; }
 uint8_t audio_mic_level() { return s_micLevel; }
 uint8_t audio_spk_level() { return s_spkLevel; }
@@ -178,6 +176,48 @@ static void upsample(const int16_t *in8, int16_t *out16, int16_t &prev) {
   }
 }
 
+// 24 kHz -> 16 kHz polyphase (2 phases x 64 taps, Q15). Flat to 7.5 kHz with
+// >55 dB image rejection above 9 kHz; the previous 3:2 point sampling folded
+// 8-12 kHz straight into the speech band. Group delay 32 input samples.
+static const int16_t kRs24[2][64] = {
+  {
+        -9,     28,    -21,    -11,     43,    -37,    -17,     77,
+       -70,    -27,    135,   -124,    -40,    222,   -208,    -55,
+       347,   -335,    -70,    529,   -529,    -84,    809,   -848,
+       -96,   1306,  -1478,   -104,   2560,  -3506,   -109,  18107,
+     18107,   -109,  -3506,   2560,   -104,  -1478,   1306,    -96,
+      -848,    809,    -84,   -529,    529,    -70,   -335,    347,
+       -55,   -208,    222,    -40,   -124,    135,    -27,    -70,
+        77,    -17,    -37,     43,    -11,    -21,     28,     -9,
+  },
+  {
+       -26,     18,     10,    -35,     30,     15,    -62,     55,
+        24,   -110,    100,     36,   -185,    171,     50,   -292,
+       277,     65,   -445,    435,     79,   -670,    683,     92,
+     -1035,   1118,    102,  -1775,   2142,    108,  -4549,   8977,
+     21952,   8936,  -4507,    106,   2102,  -1734,     99,   1082,
+      -997,     88,    650,   -635,     75,    407,   -414,     60,
+       254,   -266,     45,    153,   -164,     31,     88,    -95,
+        20,     47,    -53,     13,     26,    -31,      9,     18,
+  },
+};
+
+static void resample24to16(const int16_t *in, int16_t *out) {
+  const int nIn = FRAME_16K * 3 / 2;                    // 480 samples = 20 ms
+  static int16_t hist[64];                              // tail of the previous frame
+  static int16_t buf[64 + FRAME_16K * 3 / 2];
+  memcpy(buf, hist, sizeof(hist));
+  memcpy(buf + 64, in, nIn * sizeof(int16_t));
+  for (int n = 0; n < FRAME_16K; n++) {
+    const int base = (3 * n) / 2 + 1;                   // 64 + floor(1.5n) - 63
+    const int16_t *h = kRs24[n & 1];
+    int32_t acc = 0;
+    for (int k = 0; k < 64; k++) acc += (int32_t)h[k] * buf[base + k];
+    out[n] = sat16(acc >> 15);
+  }
+  memcpy(hist, buf + nIn, sizeof(hist));
+}
+
 static uint8_t level_of(const int16_t *pcm, int n) {
   int32_t peak = 0;
   for (int i = 0; i < n; i++) { int32_t v = pcm[i] < 0 ? -pcm[i] : pcm[i]; if (v > peak) peak = v; }
@@ -209,13 +249,10 @@ struct ToneGen {
   }
 };
 
-// Short UI prompt tones: wake acknowledged / command accepted / window expired.
+// Wake acknowledgement chime: a sine plus a soft 2nd harmonic and an
+// exponential decay, which sounds rounder than a plain gated sine.
 struct PromptSeg { uint16_t freq; uint16_t ms; };
-// Two-note bell-like chimes: a sine plus a soft 2nd harmonic and an exponential
-// decay sound rounder/clearer than a plain gated sine.
-static const PromptSeg kPromptWake[]    = {{1046, 110}, {0, 25}, {1568, 190}};
-static const PromptSeg kPromptOk[]      = {{1318, 120}, {0, 20}, {1976, 90}};
-static const PromptSeg kPromptTimeout[] = {{784, 150}, {0, 40}, {587, 300}};   // longer, downward: "window closed"
+static const PromptSeg kPromptWake[] = {{1046, 110}, {0, 25}, {1568, 190}};
 
 static volatile uint8_t s_promptReq = AUDIO_PROMPT_NONE;
 static volatile bool s_promptBusy = false;
@@ -357,54 +394,6 @@ struct Aec {
 };
 static Aec s_aec;
 
-#ifndef AEC_SELFTEST
-#define AEC_SELFTEST 0
-#endif
-#ifndef AEC_LAG_ESTIMATOR
-#define AEC_LAG_ESTIMATOR 0
-#endif
-#if AEC_SELFTEST
-// Boot-time self test with synthetic signals: tells us how aec_process()
-// interprets its buffers on this library build.
-//   A: mic = 1 kHz tone, ref = silence      -> expect output ~= input
-//   B: mic = 1 kHz tone, ref = same tone    -> expect output -> 0 after adaptation
-//   C: mic = tone, ref = silence, buffers passed as interleaved [mic,ref] pairs
-static void aec_selftest() {
-  aec_config_t cfg = {};
-  cfg.mic_num = 1; cfg.ref_num = 1; cfg.out_num = 1; cfg.filter_length = 4;
-  cfg.sample_rate = AUDIO_HW_RATE; cfg.caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
-  cfg.mode = AEC_MODE_VOIP_HIGH_PERF; cfg.nlp_level = AEC_NLP_LEVEL_AGGR;
-  aec_handle_t *h = aec_create_from_config(&cfg);
-  if (!h) { Serial.println("[AEC-TEST] create failed"); return; }
-  int n = aec_get_chunksize(h);
-  int16_t *mic = (int16_t *)heap_caps_malloc(n * 2 * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-  int16_t *ref = (int16_t *)heap_caps_malloc(n * 2 * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-  int16_t *out = (int16_t *)heap_caps_malloc(n * 2 * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-  if (!mic || !ref || !out) { aec_destroy(h); return; }
-  float ph = 0;
-  auto fill = [&](int16_t *d, int cnt, bool tone) {
-    for (int i = 0; i < cnt; i++) { d[i] = tone ? (int16_t)(8000 * sinf(ph)) : 0; ph += 2 * (float)M_PI * 1000 / AUDIO_HW_RATE; }
-  };
-  Serial.printf("[AEC-TEST] chunk=%d frame_size=%d\n", n, h->frame_size);
-  for (int pass = 0; pass < 3; pass++) {
-    uint8_t lvl = 0;
-    for (int k = 0; k < 40; k++) {
-      if (pass == 0) { fill(mic, n, true); memset(ref, 0, n * 2); }
-      else if (pass == 1) { fill(mic, n, true); memcpy(ref, mic, n * 2); }
-      else {  // interleaved [mic, ref] in one buffer, ref = 0
-        for (int i = 0; i < n; i++) { mic[2 * i] = (int16_t)(8000 * sinf(ph)); mic[2 * i + 1] = 0; ph += 2 * (float)M_PI * 1000 / AUDIO_HW_RATE; }
-        memset(ref, 0, n * 2);
-      }
-      aec_process(h, mic, ref, out);
-      lvl = level_of(out, n);
-    }
-    Serial.printf("[AEC-TEST] pass %c (%s) -> out level %u%% (input 24%%)\n", 'A' + pass,
-                  pass == 0 ? "mic tone, ref silent" : pass == 1 ? "mic tone, ref = same tone" : "interleaved buffer, ref silent", lvl);
-  }
-  free(mic); free(ref); free(out);
-  aec_destroy(h);
-}
-#endif  // AEC_SELFTEST
 #endif
 
 // ---------------------------------------------------------------------------
@@ -456,59 +445,28 @@ static bool read_mic(int16_t *mono16, int16_t *ref16) {
 }
 
 #if BOARD_V2
-// History of what we played (16 kHz) for the software echo reference, and 8 kHz
-// copies of playback / raw microphone for the echo-lag estimator.
-#define PLAY_HIST_16K (AUDIO_HW_RATE / 2)      // 500 ms
-#define PLAY_HIST_8K  (RTP_RATE / 2)           // 500 ms
-#define MIC_HIST_8K   (RTP_RATE / 10)          // 100 ms
+// History of what we played (16 kHz), used as the software echo reference when
+// s_refSlot == 4. 500 ms covers the maximum configurable delay.
+#define PLAY_HIST_16K (AUDIO_HW_RATE / 2)
 static int16_t *s_playHist16 = nullptr;   // PSRAM
-static int16_t *s_playHist8 = nullptr;    // PSRAM
-static int16_t *s_micHist8 = nullptr;     // PSRAM
-static int s_playPos16 = 0, s_playPos8 = 0, s_micPos8 = 0;
+static int s_playPos16 = 0;
 
 static bool hist_alloc() {
   if (s_playHist16) return true;
   s_playHist16 = (int16_t *)heap_caps_calloc(PLAY_HIST_16K, sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  s_playHist8 = (int16_t *)heap_caps_calloc(PLAY_HIST_8K, sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  s_micHist8 = (int16_t *)heap_caps_calloc(MIC_HIST_8K, sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  return s_playHist16 && s_playHist8 && s_micHist8;
+  return s_playHist16 != nullptr;
 }
 
 static void hist_push(int16_t *buf, int cap, int &pos, const int16_t *src, int n) {
+  if (!buf) return;
   for (int i = 0; i < n; i++) { buf[pos] = src[i]; pos = (pos + 1) % cap; }
 }
 // Fetch `n` samples that were pushed `delaySamples` + n .. `delaySamples` ago.
 static void hist_fetch(const int16_t *buf, int cap, int pos, int delaySamples, int16_t *dst, int n) {
+  if (!buf) { memset(dst, 0, n * sizeof(int16_t)); return; }
   int start = pos - delaySamples - n;
   while (start < 0) start += cap;
   for (int i = 0; i < n; i++) { dst[i] = buf[start]; start = (start + 1) % cap; }
-}
-
-// Normalised cross-correlation between the last 100 ms of raw microphone and
-// the playback history, over lags 0..maxLagMs. Returns best lag in ms, writes
-// correlation coefficient (0..1) to *corr.
-static int estimate_echo_lag(float *corr) {
-  const int n = MIC_HIST_8K;
-  static int16_t *mic = (int16_t *)heap_caps_malloc(MIC_HIST_8K * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-  static int16_t *play = (int16_t *)heap_caps_malloc(MIC_HIST_8K * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-  if (!mic || !play) { *corr = 0; return -1; }
-  hist_fetch(s_micHist8, MIC_HIST_8K, s_micPos8, 0, mic, n);
-  double micE = 0;
-  for (int i = 0; i < n; i++) micE += (double)mic[i] * mic[i];
-  if (micE < 1e4) { *corr = 0; return -1; }
-  const int maxLagMs = 350;
-  int bestLag = -1;
-  double best = 0;
-  for (int lag = 0; lag <= maxLagMs; lag += 2) {
-    hist_fetch(s_playHist8, PLAY_HIST_8K, s_playPos8, lag * RTP_RATE / 1000, play, n);
-    double dot = 0, pe = 0;
-    for (int i = 0; i < n; i++) { dot += (double)mic[i] * play[i]; pe += (double)play[i] * play[i]; }
-    if (pe < 1e4) continue;
-    double c = fabs(dot) / sqrt(micE * pe);
-    if (c > best) { best = c; bestLag = lag; }
-  }
-  *corr = (float)best;
-  return bestLag;
 }
 #endif
 
@@ -517,10 +475,7 @@ static void audio_task(void *) {
   static int16_t spk8[FRAME_8K], spk16[FRAME_16K];
   static int16_t silence16[FRAME_16K] = {0};
 #if BOARD_V2
-  static int16_t rawmic8[FRAME_8K];
-  int16_t dsHistRaw = 0;
-  uint32_t lastLag = 0;
-  int lagMs = -1; float lagCorr = 0;
+  uint8_t refClip = 0;             // ref frames at full scale in this window
 #endif
   int16_t dsHist = 0, usPrev = 0;
   ToneGen tone;
@@ -567,9 +522,7 @@ static void audio_task(void *) {
 #if BOARD_V2
       if (m == AUDIO_CALL || m == AUDIO_VOICE) {
         memset(s_playHist16, 0, PLAY_HIST_16K * sizeof(int16_t));
-        memset(s_playHist8, 0, PLAY_HIST_8K * sizeof(int16_t));
-        memset(s_micHist8, 0, MIC_HIST_8K * sizeof(int16_t));
-        s_playPos16 = s_playPos8 = s_micPos8 = 0;
+        s_playPos16 = 0;
         if (s_aecMode != 0) s_aec.start(s_aecMode);
       } else if (s_aec.active()) {
         s_aec.stop();
@@ -586,8 +539,7 @@ static void audio_task(void *) {
       const uint8_t kind = s_promptReq;
       s_promptReq = AUDIO_PROMPT_NONE;
       if (m == AUDIO_IDLE) {
-        s_promptSegs = kind == AUDIO_PROMPT_WAKE ? kPromptWake
-                     : (kind == AUDIO_PROMPT_OK ? kPromptOk : kPromptTimeout);
+        s_promptSegs = kPromptWake;
         s_promptSegIdx = 0;
         s_promptSegMs = 0;
         s_promptPhase = 0;
@@ -657,10 +609,6 @@ static void audio_task(void *) {
       const int16_t *src = mic16;
       bool aecUsed = false;
 #if BOARD_V2
-#if AEC_LAG_ESTIMATOR
-      downsample(mic16, rawmic8, dsHistRaw);
-      hist_push(s_micHist8, MIC_HIST_8K, s_micPos8, rawmic8, FRAME_8K);
-#endif
       if (s_refSlot == 4) {
         // software reference: what we played s_refDelayMs ago
         hist_fetch(s_playHist16, PLAY_HIST_16K, s_playPos16, (int)s_refDelayMs * AUDIO_HW_RATE / 1000, ref16, FRAME_16K);
@@ -671,18 +619,22 @@ static void audio_task(void *) {
       }
       refLevel = level_of(ref16, FRAME_16K);
       rawMicLevel = level_of(mic16, FRAME_16K);
+      // A reference pinned at full scale is clipped: the AEC then models a
+      // nonlinear signal and leaks echo. Watch this column if the model
+      // interrupts itself (self-triggered barge-in) or echo survives.
+      if (refLevel >= 100) refClip++;
       if (s_aec.active()) {
         if (s_aec.process(mic16, ref16, clean16)) src = clean16;
         else memset(clean16, 0, sizeof(clean16)), src = clean16;  // priming: send silence for the first chunk
         aecUsed = true;
-        // Residual echo suppression: while the far end is active and the AEC
-        // removed most of the microphone energy, what is left is echo tail /
-        // nonlinear residue rather than near-end speech. Near-end speech on top
-        // of the echo raises the out/mic ratio and passes through.
-        if (s_resSuppress && farHold > 0) {
+        // Residual echo suppression. Only the *quiet* tail of a loud far end is
+        // attenuated: the previous "output 9.5 dB below the raw mic" test also
+        // caught double-talk (the raw mic is dominated by echo, so real near-end
+        // speech after AEC always looked "much quieter") and killed barge-in.
+        if (s_resSuppress && farHold > 0 && s_spkLevel > 25) {
           uint8_t outLv = level_of(clean16, FRAME_16K);
-          if (rawMicLevel > 8 && outLv * 3 < rawMicLevel) {
-            for (int i = 0; i < FRAME_16K; i++) clean16[i] = clean16[i] / 4;   // -12 dB
+          if (outLv < 6) {
+            for (int i = 0; i < FRAME_16K; i++) clean16[i] = clean16[i] / 2;   // -6 dB
             resFrames++;
           }
         }
@@ -712,11 +664,7 @@ static void audio_task(void *) {
         if (rate == 24000) {
           static int16_t in24[FRAME_16K * 3 / 2];   // 480 samples = 20 ms
           if (VoiceSession::popPlay(in24, FRAME_16K * 3 / 2) > 0) {
-            // 3 -> 2: keep sample 0, average 1 and 2
-            for (int k = 0; k < FRAME_16K / 2; k++) {
-              spk16[2 * k] = in24[3 * k];
-              spk16[2 * k + 1] = (int16_t)(((int32_t)in24[3 * k + 1] + in24[3 * k + 2]) / 2);
-            }
+            resample24to16(in24, spk16);
             gotFar = true;
           }
         } else if (rate == 16000) {
@@ -771,28 +719,11 @@ static void audio_task(void *) {
       if (clickFrames > 0) { tone.fill(spk16, 1200, 0, 1000, 0, 5000); clickFrames--; }
 #if BOARD_V2
       if (s_refSlot == 4) hist_push(s_playHist16, PLAY_HIST_16K, s_playPos16, spk16, FRAME_16K);
-#if AEC_LAG_ESTIMATOR
-      {
-        static int16_t h8 = 0;
-        static int16_t p8[FRAME_8K];
-        downsample(spk16, p8, h8);
-        hist_push(s_playHist8, PLAY_HIST_8K, s_playPos8, p8, FRAME_8K);
-      }
-#endif
 #endif
       if (!write_stereo(spk16)) wrFails++;
 
 #if BOARD_V2
       uint32_t now = millis();
-#if AEC_LAG_ESTIMATOR
-      // Expensive (software double precision): only for bring-up of the software reference.
-      if (now - lastLag > 3000) {
-        lastLag = now;
-        if (s_spkLevel > 5) lagMs = estimate_echo_lag(&lagCorr); else { lagMs = -1; lagCorr = 0; }
-      }
-#else
-      (void)lastLag;
-#endif
       {
         uint32_t dt = (uint32_t)(esp_timer_get_time() - frameT0);
         if (dt > wMaxUs) wMaxUs = dt;
@@ -802,9 +733,10 @@ static void audio_task(void *) {
         lastStat = now;
         if (m == AUDIO_VOICE) {
           VoiceSession::Stats vs = VoiceSession::stats();
-          Serial.printf("[VOICE] aec %lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% res=%u%% | tx=%lu rxAudio=%lu depth=%dms under=%lu drop=%lu micdrop=%lu heap=%u\n",
+          Serial.printf("[VOICE] aec %lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% res=%u%% refclip=%u%% | tx=%lu rxAudio=%lu depth=%dms under=%lu drop=%lu micdrop=%lu heap=%u\n",
                         (unsigned long)(s_aec.procCount ? s_aec.procUs / s_aec.procCount : 0), (unsigned long)wMaxUs, wLate,
                         wMic, wOut, wRef, wSpk, wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? resFrames * 100 / wFrames : 0,
+                        wFrames ? refClip * 100 / wFrames : 0,
                         (unsigned long)vs.txChunks, (unsigned long)vs.rxAudioBytes, vs.playDepthMs, (unsigned long)vs.playUnderruns,
                         (unsigned long)vs.playDrops, (unsigned long)vs.micDrops, (unsigned)ESP.getFreeHeap());
           s_aec.procUs = 0; s_aec.procCount = 0; s_aec.procMaxUs = 0;
@@ -820,14 +752,15 @@ static void audio_task(void *) {
           s_rtp->statsReset();
           s_aec.procUs = 0; s_aec.procCount = 0; s_aec.procMaxUs = 0;
         } else {
-          Serial.printf("[AUDIO] peak2s slots=[%u %u %u %u] mic(s%u)=%u out=%u ref=%u spk=%u far=%u%% out>5=%u%% lag=%dms corr=%.2f micfail=%u rtp tx=%lu txfail=%lu (aec off)\n",
+          Serial.printf("[AUDIO] peak2s slots=[%u %u %u %u] mic(s%u)=%u out=%u ref=%u spk=%u far=%u%% out>5=%u%% refclip=%u%% micfail=%u rtp tx=%lu txfail=%lu (aec off)\n",
                         wSlot[0], wSlot[1], wSlot[2], wSlot[3], s_micSlot, wMic, wOut, wRef, wSpk,
-                        wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? wNearOut * 100 / wFrames : 0, lagMs, lagCorr,
+                        wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? wNearOut * 100 / wFrames : 0,
+                        wFrames ? refClip * 100 / wFrames : 0,
                         (unsigned)micFails, (unsigned long)s_rtp->statTx(), (unsigned long)s_rtp->statTxFail());
           s_rtp->statsReset();
         }
         memset(wSlot, 0, sizeof(wSlot)); wMic = wOut = wRef = wSpk = 0; wFrames = wFarActive = wNearOut = 0; resFrames = 0; wMaxUs = 0; wLate = 0;
-        micFails = 0; wrFails = 0;
+        micFails = 0; wrFails = 0; refClip = 0;
       }
 #endif
       continue;
@@ -837,7 +770,6 @@ static void audio_task(void *) {
     switch (m) {
       case AUDIO_RINGBACK: tone.fill(spk16, 450, 0, 1000, 4000, 7000); break;          // CN ringback
       case AUDIO_RINGING:  tone.fill(spk16, 880, 1047, 1000, 2000, 9000); break;        // two-tone ring
-      case AUDIO_BUSY:     tone.fill(spk16, 450, 0, 350, 350, 7000); break;
       default:             memset(spk16, 0, sizeof(spk16)); break;
     }
     if (clickFrames > 0) { tone.fill(spk16, 1200, 0, 1000, 0, 5000); clickFrames--; }
@@ -851,9 +783,6 @@ void audio_start_task(RtpSession *rtp) {
   s_rtp = rtp;
 #if BOARD_V2
   if (!hist_alloc()) Serial.println("[AUDIO] history alloc failed");
-#endif
-#if BOARD_V2 && AEC_SELFTEST
-  aec_selftest();
 #endif
   if (s_task) return;
   // Core 1: away from the WiFi/lwIP stack on core 0. LVGL (loop()) also runs on

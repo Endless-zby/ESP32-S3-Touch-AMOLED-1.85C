@@ -8,8 +8,8 @@ export ARDUINO_DIRECTORIES_USER="${ARDUINO_DIRECTORIES_USER:-$HOME/Documents/Ard
 FQBN="esp32:esp32:waveshare_esp32_s3_touch_lcd_185:PSRAM=enabled,FlashMode=qio,PartitionScheme=app3M_fat9M_16MB,USBMode=hwcdc,CDCOnBoot=cdc,UploadSpeed=921600"
 OUT="$ROOT/build"
 mkdir -p "$OUT"
-# ESP-SR (AEC + MultiNet7 wake/command words) comes from the core's precompiled
-# esp-sr component now, so libs/ESP_SR_AEC is no longer linked: mixing two esp-sr
+# ESP-SR (AEC + WakeNet9 wake word) comes from the core's precompiled esp-sr
+# component now, so libs/ESP_SR_AEC is no longer linked: mixing two esp-sr
 # versions in one image would resolve aec_*/afe_* symbols from whichever archive
 # the linker happens to pick first. The sketch's partitions.csv adds the "model"
 # partition used by esp_srmodel_init("model").

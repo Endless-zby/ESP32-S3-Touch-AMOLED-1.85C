@@ -61,7 +61,6 @@ public:
   void update(float dt);
   void setExpression(int id);
   int  expression() const { return _expr; }
-  const char *expressionName() const;
   void setGazeOverride(bool on, float gx, float gy);
   void setForceClosed(bool on) { _forceClosed = on; }
   void setTalking(bool on) { _talking = on; }   // 说话时眼睛轻微律动

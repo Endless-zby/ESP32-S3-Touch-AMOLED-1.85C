@@ -103,12 +103,6 @@ void FaceRenderer::ringDraw(uint8_t level) {
   }
 }
 
-void FaceRenderer::clearAll() {
-  if (!_buf) return;
-  memset(_buf, 0, (size_t)_w * _h * sizeof(uint16_t));
-  resetDirty();
-}
-
 EyeShape FaceRenderer::scEye(const EyeShape &e) const {
   EyeShape o = e;
   o.cx *= _scale; o.cy *= _scale;

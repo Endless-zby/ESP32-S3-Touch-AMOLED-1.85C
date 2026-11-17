@@ -41,8 +41,7 @@ class FaceRenderer {
   // Render one frame; fills out[] with the rectangles that changed.
   // Returns the number of rectangles (0..maxOut).
   int render(const EyeShape eyes[2], const BrowShape brows[2], IRect out[], int maxOut);
-  void clearAll();      // wipe the whole canvas
-  void resetDirty();    // forget previous shapes (after clearAll / screen show)
+  void resetDirty();    // forget previous shapes (after a full clear / screen show)
   // Edge breathing light: a purple band hugging the rim that fades toward the
   // centre over ~2 mm (2 mm is ~15 px on the 1.85" 360 px panel).
   bool beginRing();

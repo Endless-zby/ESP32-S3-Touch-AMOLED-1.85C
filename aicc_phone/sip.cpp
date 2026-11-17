@@ -288,7 +288,6 @@ uint16_t SipClient::contactPort() const { return _pubKnown ? _pubPort : _cfg.loc
 String SipClient::newBranch() const { return "z9hG4bK" + hex32(esp_random()) + hex32(esp_random()); }
 String SipClient::newTag() const { return hex32(esp_random()); }
 String SipClient::newCallId() const { return hex32(esp_random()) + hex32(esp_random()) + "@" + _localIp; }
-String SipClient::publicAddress() const { return _pubKnown ? _pubIp.toString() + ":" + String(_pubPort) : String("?"); }
 
 String SipClient::viaHeader(const String &branch) const {
   return "Via: SIP/2.0/UDP " + _localIp + ":" + String(_cfg.localPort) + ";rport;branch=" + branch + "\r\n";

@@ -22,7 +22,8 @@ build/           编译产物（tools/build.sh 生成）
 - **SIP**：直接 INVITE（FreeSWITCH 5080 外部口，免注册）或注册模式（5060，digest 认证）二选一；
   自动通过 OPTIONS 响应的 `received/rport` 学习公网地址以穿越 NAT；RTP 对称收发，服务器侧自动纠正媒体地址。
 - **音频**：ES8311 + ES7210 + NS4150B 功放，16 kHz 采样、软件重采样到 8 kHz。
-- **回声消除**：使用乐鑫 esp-sr 的 AEC（`libs/ESP_SR_AEC`，预编译库），默认参数与 xiaozhi-esp32 在本板上相同
+- **回声消除**：使用 esp32 core 自带 esp-sr 的 AEC（`esp_aec.h`，`libs/ESP_SR_AEC` 已不再链接——两个 esp-sr 版本混进同一个
+  镜像会抢 `aec_*`/`afe_*` 符号），默认参数与 xiaozhi-esp32 在本板上相同
   （全双工低功耗模式 + 最强 NLP）。V2 板的 ES7210 第 3 路麦克风输入在硬件上接的是 ES8311 的线路输出
   （原理图 "AEC" 区块），ES7210 按 esp_codec_dev 的寄存器序列配置成 4 通道 TDM 后，64 位 I2S 帧里的
   4 个 16 位槽位依次是 MIC1 / MIC3 / MIC2 / MIC4，槽位 1 就是回声参考。网页里可选 AEC 模式、麦克风/参考槽位、
@@ -31,8 +32,8 @@ build/           编译产物（tools/build.sh 生成）
 ## 编译环境
 
 机器上已经具备：Arduino IDE 2（自带 arduino-cli 1.5.1）、esp32 core 3.3.10、
-`~/Documents/Arduino/libraries/lvgl`（9.3.0）以及与之并列的 `lv_conf.h`（工程里有同一份副本）、
-`~/Documents/Arduino/libraries/ESP_SR_AEC`（与仓库 `libs/ESP_SR_AEC` 相同）。
+`~/Documents/Arduino/libraries/lvgl`（9.3.0）以及与之并列的 `lv_conf.h`（工程里有同一份副本）。
+AEC 用 core 自带的 esp-sr，`libs/ESP_SR_AEC` 只是历史留存（仓库里仍保留，但 build.sh 不再 `--library` 引入它）。
 
 ### 用脚本（推荐）
 
@@ -105,7 +106,8 @@ tools/monitor.sh        # 115200 串口日志
 | `voice_session.*` | Qwen Realtime WebSocket 客户端：会话配置、音频收发环形缓冲、事件解析、工具结果回传 |
 | `assistant.*` | 助手状态机：休眠 / 唤醒 / 会话 / 通话接管，工具执行，闲置休眠 |
 | `wake_word.*` | 本地唤醒词（WakeNet9） |
-| `libs/ESP_SR_AEC` | esp-sr 回声消除预编译库（Arduino 库形式，build.sh 用 `--library` 引入） |
+| `libs/WebSockets` | arduinoWebSockets 2.7.2 的本地副本（帧上限 256 KB、PSRAM 帧缓冲、`idleHook`），见其 `PATCHED.md` |
+| `libs/ESP_SR_AEC` | 历史 esp-sr AEC 预编译库，**已不参与编译**（AEC 来自 core 自带 esp-sr） |
 | `ui.*` / `ui_strings.h` | LVGL 界面（所有控件都在圆形范围内）；中文字符串集中在 `ui_strings.h` |
 | `font_cn_18.c` / `font_cn_24.c` | 自动生成的中文字体（思源黑体子集 + ASCII + LVGL 图标） |
 | `web_portal.*` | 热点 + DNS 劫持 + 配网/设置网页 |

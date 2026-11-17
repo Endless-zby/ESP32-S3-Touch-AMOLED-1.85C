@@ -16,7 +16,8 @@ AssistantState s_state = AS_SLEEP;
 uint32_t s_stateSince = 0;
 uint32_t s_sessionStartAt = 0;
 uint32_t s_lastActivity = 0;       // last speech by either side
-String s_captionPending; bool s_captionDirty = false; uint32_t s_captionDrawn = 0;   // transcript redraw throttle
+char s_caption[512]; uint32_t s_captionDrawn = 0;   // transcript redraw throttle
+bool s_sleepAfterReply = false;                     // end_conversation: sleep once the goodbye has played
 uint32_t s_failedAt = 0;
 bool s_resumeAfterCall = false;    // a session was running when the call started
 bool s_pendingDial = false;        // call_front_desk accepted: dial after the model finishes its sentence
@@ -68,11 +69,16 @@ void enterState(AssistantState st) {
   s_stateSince = millis();
 }
 
+void clearCaption() {
+  s_caption[0] = 0;
+  ui_face_caption("");
+}
+
 void goSleep() {
   VoiceSession::end();
   if (audio_mode() == AUDIO_VOICE) audio_set_mode(AUDIO_IDLE);
   setRing(false);
-  s_captionDirty = false; s_captionPending = ""; ui_face_caption("");
+  clearCaption();
   ui_face_set_expr(EX_SLEEPY);
   ui_screen_sleep(true);
   WakeWord::setListening(true);
@@ -97,6 +103,7 @@ bool startSession(const char *greeting) {
   if (!VoiceSession::begin(c)) return false;
   s_sessionStartAt = millis();
   s_lastActivity = millis();
+  s_sleepAfterReply = false;
   return true;
 }
 
@@ -172,8 +179,9 @@ void runTool(const VoiceSession::Event &ev) {
     out = "{\"ok\":true,\"status\":\"dialing\"}";
   } else if (ev.toolName == "end_conversation") {
     out = "{\"ok\":true}";
-    // let the goodbye finish playing, then sleep (handled in loop via response.done)
-    s_lastActivity = millis() - (uint32_t)g_settings.aiIdleSec * 1000 + 4000;   // sleep in ~4 s
+    // Sleep once the goodbye has actually played (AS_SESSION handles it), so a
+    // long closing sentence is never cut off and a short one does not linger.
+    s_sleepAfterReply = true;
   } else {
     out = "{\"ok\":false,\"error\":\"unknown tool\"}";
   }
@@ -182,11 +190,12 @@ void runTool(const VoiceSession::Event &ev) {
 
 void doDial() {
   s_pendingDial = false;
+  s_sleepAfterReply = false;
   VoiceSession::flushPlayback();
   VoiceSession::end();
   if (audio_mode() == AUDIO_VOICE) audio_set_mode(AUDIO_IDLE);
   setRing(false);
-  s_captionDirty = false; s_captionPending = ""; ui_face_caption("");
+  clearCaption();
   s_resumeAfterCall = true;
   if (!(H.dialFrontDesk && H.dialFrontDesk())) {
     // could not dial: back to a fresh session so the guest is told
@@ -226,7 +235,7 @@ void assistant_on_call_started() {
     s_resumeAfterCall = false;
   }
   setRing(false);
-  s_captionDirty = false; s_captionPending = ""; ui_face_caption("");
+  clearCaption();
   WakeWord::setListening(false);
   enterState(AS_CALL);
 }
@@ -256,7 +265,7 @@ void assistant_loop() {
     switch (ev.kind) {
       case VoiceSession::Event::CONNECTED:
         Serial.printf("[ASSIST] session connected in %lu ms\n", (unsigned long)(now - s_sessionStartAt));
-        s_captionDirty = false; s_captionPending = ""; ui_face_caption("");
+        clearCaption();
         ui_face_set_expr(EX_LISTENING);
         s_lastActivity = now;
         enterState(AS_SESSION);
@@ -288,10 +297,6 @@ void assistant_loop() {
         s_lastActivity = now;
         ui_face_set_expr(EX_THINKING);
         break;
-      case VoiceSession::Event::TRANSCRIPT:
-        // deltas arrive many times a second; redraw the CJK label at most ~4x/s
-        s_captionPending = ev.text; s_captionDirty = true;
-        break;
       case VoiceSession::Event::TOOL_CALL:
         s_lastActivity = now;
         runTool(ev);
@@ -315,9 +320,12 @@ void assistant_loop() {
       break;
 
     case AS_SESSION: {
-      if (s_captionDirty && now - s_captionDrawn >= 250) {
-        s_captionDrawn = now; s_captionDirty = false;
-        ui_face_caption(s_captionPending.c_str());
+      // Transcript deltas arrive many times a second; the session keeps the text
+      // in a fixed buffer and we pull it at most 4x/s (CJK label redraw is costly).
+      if (now - s_captionDrawn >= 250 && VoiceSession::takeTranscriptDirty()) {
+        s_captionDrawn = now;
+        VoiceSession::copyTranscript(s_caption, sizeof(s_caption));
+        ui_face_caption(s_caption);
       }
       if (audio_mode() == AUDIO_IDLE && !audio_prompt_busy()) {
         Serial.printf("[ASSIST] audio -> voice (heap %u)\n", (unsigned)ESP.getFreeHeap());
@@ -330,6 +338,12 @@ void assistant_loop() {
       else if (now - s_lastSpeakingUi > 600 && now - VoiceSession::lastUserSpeechMs() > 1500) ui_face_set_expr(EX_LISTENING);
       if (now - VoiceSession::lastUserSpeechMs() < 1500) s_lastActivity = max(s_lastActivity, VoiceSession::lastUserSpeechMs());
       if (s_pendingDial && (int32_t)(now - s_pendingDialAt) >= 0 && !speaking) { doDial(); break; }
+      if (s_sleepAfterReply && !speaking && now - s_lastActivity > 500) {
+        Serial.println("[ASSIST] end_conversation -> sleep");
+        s_sleepAfterReply = false;
+        goSleep();
+        break;
+      }
       if (now - s_lastActivity > (uint32_t)g_settings.aiIdleSec * 1000) {
         Serial.printf("[ASSIST] %u s without speech -> sleep\n", (unsigned)g_settings.aiIdleSec);
         goSleep();

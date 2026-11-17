@@ -32,21 +32,33 @@ volatile bool s_taskDone = false;
 void reapTask() {
   if (s_task && s_taskDone) { vTaskDeleteWithCaps(s_task); s_task = nullptr; s_taskDone = false; }
 }
-volatile uint32_t s_lastUser = 0, s_lastAi = 0;
-String s_transcript;                 // current reply text (ws task only)
+volatile uint32_t s_lastUser = 0;
 Stats s_st = {};
 
-// ---- mic ring: 16 kHz int16, 1 s ----
-const int MIC_CAP = 16000 * 3;
+// Reply caption, pulled by the UI thread (see copyTranscript/takeTranscriptDirty).
+// Kept in a fixed buffer so a reply never costs one heap allocation per delta.
+char s_tr[512];
+int s_trLen = 0;
+volatile bool s_trDirty = false;
+portMUX_TYPE s_trMux = portMUX_INITIALIZER_UNLOCKED;
+
+// ---- mic ring: 16 kHz int16, 1 s (oldest dropped beyond 600 ms of backlog) ----
+const int MIC_CAP = 16000 * 1;
+const int MIC_MAX_BACKLOG = 16000 * 3 / 5;   // 600 ms
 int16_t *s_mic = nullptr; int s_micHead = 0, s_micCount = 0;
-// ---- play ring: int16 at outRate, 12 s ----
+// ---- play ring: int16 at outRate, 4 s ----
 int s_playCap = 0;
 int16_t *s_play = nullptr; int s_playHead = 0, s_playCount = 0;
 volatile bool s_playing = false;
 int s_prerollSamples = 0;
 
+// barge-in: after the server reports user speech, audio still in flight for the
+// cancelled response must not be played. Cleared when the next response starts.
+volatile bool s_dropAudio = false;
+
 // fragment reassembly for frames larger than the lib's 15 KB frame limit
-char *s_frag = nullptr; size_t s_fragLen = 0; const size_t FRAG_CAP = 256 * 1024;
+char *s_frag = nullptr; size_t s_fragLen = 0; bool s_fragOverflow = false;
+const size_t FRAG_CAP = 64 * 1024;
 
 void postEvent(Event::Kind k, const String &text = String(), const String &name = String(),
                const String &args = String(), const String &callId = String()) {
@@ -60,6 +72,38 @@ void queueSend(const String &json) {
   if (!s_txq) return;
   String *s = new String(json);
   if (xQueueSend(s_txq, &s, pdMS_TO_TICKS(50)) != pdTRUE) delete s;
+}
+
+// ---- caption buffer (ws task writes, UI thread reads) ----
+void trClear() {
+  portENTER_CRITICAL(&s_trMux);
+  s_trLen = 0; s_tr[0] = 0; s_trDirty = true;
+  portEXIT_CRITICAL(&s_trMux);
+}
+
+void trReplace(const char *s, int n) {
+  if (!s) return;
+  if (n > (int)sizeof(s_tr) - 1) n = sizeof(s_tr) - 1;
+  // do not cut a UTF-8 sequence in half
+  while (n > 0 && ((unsigned char)s[n] & 0xC0) == 0x80) n--;
+  portENTER_CRITICAL(&s_trMux);
+  memcpy(s_tr, s, n); s_tr[n] = 0; s_trLen = n; s_trDirty = true;
+  portEXIT_CRITICAL(&s_trMux);
+}
+
+void trAppend(const char *s, int n) {
+  if (!s || n <= 0) return;
+  portENTER_CRITICAL(&s_trMux);
+  int room = (int)sizeof(s_tr) - 1 - s_trLen;
+  if (room <= 0) { s_trDirty = true; portEXIT_CRITICAL(&s_trMux); return; }
+  if (n > room) {
+    int cut = room;
+    while (cut > 0 && ((unsigned char)s[cut] & 0xC0) == 0x80) cut--;
+    n = cut;
+  }
+  if (n > 0) { memcpy(s_tr + s_trLen, s, n); s_trLen += n; s_tr[s_trLen] = 0; }
+  s_trDirty = true;
+  portEXIT_CRITICAL(&s_trMux);
 }
 
 // ---------------------------------------------------------------------------
@@ -143,9 +187,11 @@ void ringsReset() {
   xSemaphoreGive(s_ringLock);
 }
 
-// Rings are single-producer / single-consumer (ws task <-> audio task); the
-// mutex is only held for short index updates, never across a whole frame copy.
+// Rings are shared by the ws task and the audio task. The whole copy runs
+// inside the lock: a copy is at most ~1.3 KB, while releasing the lock between
+// the index snapshot and the commit let one side overwrite the other's update.
 void playPush(const int16_t *pcm, int n) {
+  if (!s_play || n <= 0) return;
   xSemaphoreTake(s_ringLock, portMAX_DELAY);
   int head = s_playHead, count = s_playCount;
   if (count + n > s_playCap) {                      // drop oldest
@@ -153,12 +199,11 @@ void playPush(const int16_t *pcm, int n) {
     head = (head + drop) % s_playCap; count -= drop; s_st.playDrops += drop;
   }
   int tail = (head + count) % s_playCap;
-  xSemaphoreGive(s_ringLock);
   int first = min(n, s_playCap - tail);
   memcpy(&s_play[tail], pcm, first * sizeof(int16_t));
   if (n > first) memcpy(&s_play[0], pcm + first, (n - first) * sizeof(int16_t));
-  xSemaphoreTake(s_ringLock, portMAX_DELAY);
-  s_playHead = head; s_playCount = count + n;
+  s_playHead = head;
+  s_playCount = count + n;
   xSemaphoreGive(s_ringLock);
 }
 
@@ -181,6 +226,10 @@ String sessionUpdateJson() {
 }
 
 void handleAudioDelta(const char *js) {
+  // Barge-in: the cancelled response may still have frames in flight. Drop them
+  // until the next response.created, otherwise 100-400 ms of stale AI speech
+  // plays after the guest has interrupted.
+  if (s_dropAudio) { s_st.playDrops++; return; }
   // locate "delta":"...." without copying through String (payload can be 10+ KB)
   const char *p = strstr(js, "\"delta\"");
   if (!p) return;
@@ -196,7 +245,6 @@ void handleAudioDelta(const char *js) {
   if (mbedtls_base64_decode(buf, bufCap, &olen, (const uint8_t *)p, b64len) != 0) return;
   playPush((const int16_t *)buf, olen / 2);
   s_st.rxAudioBytes += olen;
-  s_lastAi = millis();
 }
 
 void handleMessage(const char *js, size_t len) {
@@ -209,11 +257,11 @@ void handleMessage(const char *js, size_t len) {
     Serial.printf("[VOICE] << %s (%u B) int=%u\n", type.c_str(), (unsigned)len, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
   if (type == "response.audio_transcript.delta") {
-    String d; if (jsonString(js, "delta", d)) { s_transcript += d; postEvent(Event::TRANSCRIPT, s_transcript); }
+    String d; if (jsonString(js, "delta", d)) trAppend(d.c_str(), d.length());
     return;
   }
   if (type == "response.audio_transcript.done") {
-    String t; if (jsonString(js, "transcript", t)) { s_transcript = t; postEvent(Event::TRANSCRIPT, s_transcript); }
+    String t; if (jsonString(js, "transcript", t)) trReplace(t.c_str(), t.length());
     return;
   }
   if (type == "session.created") {
@@ -230,7 +278,9 @@ void handleMessage(const char *js, size_t len) {
   }
   if (type == "input_audio_buffer.speech_started") {
     s_lastUser = millis();
-    // barge-in: drop whatever the model already streamed
+    // barge-in: drop what is buffered now and anything still in flight for the
+    // cancelled response (cleared again on the next response.created).
+    s_dropAudio = true;
     flushPlayback();
     if (s_responseActive) queueSend("{\"type\":\"response.cancel\"}");
     postEvent(Event::USER_SPEECH_START);
@@ -242,7 +292,7 @@ void handleMessage(const char *js, size_t len) {
     if (s_retryCreate) { s_retryCreate = false; queueSend("{\"type\":\"response.create\"}"); }
     return;
   }
-  if (type == "response.created") { s_responseActive = true; s_transcript = ""; return; }
+  if (type == "response.created") { s_responseActive = true; s_dropAudio = false; trClear(); return; }
   if (type == "response.done") {
     s_responseActive = false;
     String st; jsonString(js, "status", st, 32);
@@ -268,7 +318,8 @@ void handleMessage(const char *js, size_t len) {
   }
   // everything else: log the type only
   if (type.startsWith("response.audio") || type.startsWith("conversation.item") || type.startsWith("rate_limits") ||
-      type.startsWith("response.output_item") || type.startsWith("response.content_part") || type.startsWith("input_audio_buffer")) return;
+      type.startsWith("response.output_item") || type.startsWith("response.content_part") || type.startsWith("input_audio_buffer") ||
+      type.startsWith("response.function_call_arguments.delta")) return;
   Serial.printf("[VOICE] event %s\n", type.c_str());
 }
 
@@ -293,17 +344,23 @@ void onWsEvent(WStype_t t, uint8_t *payload, size_t len) {
     }
     case WStype_FRAGMENT_TEXT_START:
       s_fragLen = 0;
+      s_fragOverflow = false;
       // fallthrough
     case WStype_FRAGMENT:
-      if (s_frag && s_fragLen + len < FRAG_CAP) { memcpy(s_frag + s_fragLen, payload, len); s_fragLen += len; }
+      if (!s_frag || s_fragLen + len >= FRAG_CAP) { s_fragOverflow = true; break; }
+      memcpy(s_frag + s_fragLen, payload, len);
+      s_fragLen += len;
       break;
     case WStype_FRAGMENT_FIN:
-      if (s_frag && s_fragLen + len < FRAG_CAP) {
+      if (s_frag && !s_fragOverflow && s_fragLen + len < FRAG_CAP) {
         memcpy(s_frag + s_fragLen, payload, len); s_fragLen += len; s_frag[s_fragLen] = 0;
         s_st.bytesIn += s_fragLen;
         handleMessage(s_frag, s_fragLen);
+      } else if (s_fragOverflow) {
+        Serial.printf("[VOICE] dropped fragmented frame > %u B\n", (unsigned)FRAG_CAP);
       }
       s_fragLen = 0;
+      s_fragOverflow = false;
       break;
     case WStype_ERROR:
       Serial.printf("[VOICE] ws error: %.*s\n", (int)len, (const char *)payload);
@@ -328,12 +385,11 @@ void sendMicChunk() {
   xSemaphoreTake(s_ringLock, portMAX_DELAY);
   if (s_micCount < N) { xSemaphoreGive(s_ringLock); return; }
   int head = s_micHead;
-  xSemaphoreGive(s_ringLock);
   int first = min(N, MIC_CAP - head);
   memcpy(pcm, &s_mic[head], first * sizeof(int16_t));
   if (N > first) memcpy(pcm + first, &s_mic[0], (N - first) * sizeof(int16_t));
-  xSemaphoreTake(s_ringLock, portMAX_DELAY);
-  s_micHead = (head + N) % MIC_CAP; s_micCount -= N;
+  s_micHead = (head + N) % MIC_CAP;
+  s_micCount -= N;
   xSemaphoreGive(s_ringLock);
   const size_t B64CAP = N * 2 / 3 * 4 + 8, MSGCAP = B64CAP + 64;
   static char *b64 = (char *)heap_caps_malloc(B64CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -445,20 +501,22 @@ bool VoiceSession::begin(const Config &cfg) {
   if (!s_frag) s_frag = (char *)heap_caps_malloc(FRAG_CAP + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   s_cfg = cfg;
   if (s_cfg.outRate < 8000 || s_cfg.outRate > 48000) s_cfg.outRate = 24000;
-  int cap = (int)s_cfg.outRate * 12;
+  int cap = (int)s_cfg.outRate * 4;      // 4 s of playback buffer is plenty
   if (cap != s_playCap) { free(s_play); s_play = (int16_t *)heap_caps_malloc(cap * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); s_playCap = s_play ? cap : 0; }
   s_prerollSamples = (int)s_cfg.outRate * VOICE_PREROLL_MS / 1000;
   if (!s_mic || !s_play || !s_frag) { Serial.println("[VOICE] buffer alloc failed"); return false; }
   if (!cfg.apiKey.length()) { Serial.println("[VOICE] no API key configured"); s_state = VS_ERROR; postEvent(Event::FAILED, "no api key"); return false; }
   ringsReset();
   memset(&s_st, 0, sizeof(s_st));
-  s_transcript = "";
+  trClear();
+  s_fragLen = 0; s_fragOverflow = false;
+  s_dropAudio = false;
   s_sessionReady = false;
   s_responseActive = false;
   s_retryCreate = false;
   s_stopReq = false;
   s_taskDone = false;
-  s_lastUser = s_lastAi = millis();
+  s_lastUser = millis();
   s_state = VS_CONNECTING;
   // Core 0 next to WiFi; priority between the audio task (12) and loop().
   if (xTaskCreatePinnedToCoreWithCaps(voiceTask, "voice", 16384, nullptr, 6, &s_task, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
@@ -470,19 +528,19 @@ bool VoiceSession::begin(const Config &cfg) {
 void VoiceSession::end() {
   if (s_task) {
     s_stopReq = true;
-    for (int i = 0; i < 200 && !s_taskDone; i++) vTaskDelay(pdMS_TO_TICKS(10));
+    // The task normally exits in one 10 ms tick. Cap the wait so a stuck socket
+    // cannot freeze the UI: if it is still running, poll() reaps it later.
+    for (int i = 0; i < 80 && !s_taskDone; i++) vTaskDelay(pdMS_TO_TICKS(10));
     reapTask();
   }
   s_state = VS_OFF;
   s_sessionReady = false;
   s_responseActive = false;
+  s_dropAudio = false;
   if (s_ringLock) ringsReset();
   Event *e = nullptr;
   while (s_evq && xQueueReceive(s_evq, &e, 0) == pdTRUE) delete e;
 }
-
-VoiceSession::State VoiceSession::state() { return s_state; }
-bool VoiceSession::connected() { return s_state == VS_READY; }
 
 bool VoiceSession::poll(Event &ev) {
   reapTask();
@@ -518,18 +576,21 @@ void VoiceSession::flushPlayback() {
 }
 
 void VoiceSession::pushMic(const int16_t *pcm, int n) {
-  if (!s_mic || !s_sessionReady) return;
+  if (!s_mic || !s_sessionReady || n <= 0) return;
   xSemaphoreTake(s_ringLock, portMAX_DELAY);
   int head = s_micHead, count = s_micCount;
-  const int MIC_MAX_BACKLOG = 16000 * 3 / 2;   // 1.5 s: older audio only adds delay to the server's view of the guest
-  if (count + n > MIC_MAX_BACKLOG) { int drop = count + n - MIC_MAX_BACKLOG; head = (head + drop) % MIC_CAP; count -= drop; s_st.micDrops += drop; }
+  // Stale audio only adds delay to the server's view of the guest, which costs
+  // barge-in latency; keep at most MIC_MAX_BACKLOG and drop the oldest.
+  if (count + n > MIC_MAX_BACKLOG) {
+    int drop = count + n - MIC_MAX_BACKLOG;
+    head = (head + drop) % MIC_CAP; count -= drop; s_st.micDrops += drop;
+  }
   int tail = (head + count) % MIC_CAP;
-  xSemaphoreGive(s_ringLock);
   int first = min(n, MIC_CAP - tail);
   memcpy(&s_mic[tail], pcm, first * sizeof(int16_t));
   if (n > first) memcpy(&s_mic[0], pcm + first, (n - first) * sizeof(int16_t));
-  xSemaphoreTake(s_ringLock, portMAX_DELAY);
-  s_micHead = head; s_micCount = count + n;
+  s_micHead = head;
+  s_micCount = count + n;
   xSemaphoreGive(s_ringLock);
 }
 
@@ -541,24 +602,25 @@ int VoiceSession::popPlay(int16_t *out, int n) {
     else { xSemaphoreGive(s_ringLock); return 0; }
   }
   if (s_playCount < n) {
-    // underrun: play what is left padded with silence, then wait for preroll again
+    // Partial underrun (network jitter): pad this frame with silence but keep
+    // playing, so the next delta resumes immediately instead of waiting for a
+    // fresh 240 ms preroll. An empty ring stops playback as before.
     int got = s_playCount;
     for (int i = 0; i < got; i++) { out[i] = s_play[s_playHead]; s_playHead = (s_playHead + 1) % s_playCap; }
     for (int i = got; i < n; i++) out[i] = 0;
     s_playCount = 0;
-    s_playing = false;
-    if (got == 0) { xSemaphoreGive(s_ringLock); return 0; }
-    s_st.playUnderruns++;
+    if (got == 0) s_playing = false;
     xSemaphoreGive(s_ringLock);
+    if (got == 0) return 0;
+    s_st.playUnderruns++;
     return n;
   }
   int head = s_playHead;
-  xSemaphoreGive(s_ringLock);
   int first = min(n, s_playCap - head);
   memcpy(out, &s_play[head], first * sizeof(int16_t));
   if (n > first) memcpy(out + first, &s_play[0], (n - first) * sizeof(int16_t));
-  xSemaphoreTake(s_ringLock, portMAX_DELAY);
-  s_playHead = (head + n) % s_playCap; s_playCount -= n;
+  s_playHead = (head + n) % s_playCap;
+  s_playCount -= n;
   xSemaphoreGive(s_ringLock);
   return n;
 }
@@ -566,7 +628,21 @@ int VoiceSession::popPlay(int16_t *out, int n) {
 bool VoiceSession::playbackActive() { return s_playing || s_playCount >= s_prerollSamples; }
 uint32_t VoiceSession::playbackRate() { return s_cfg.outRate; }
 uint32_t VoiceSession::lastUserSpeechMs() { return s_lastUser; }
-uint32_t VoiceSession::lastAiSpeechMs() { return s_lastAi; }
+
+bool VoiceSession::takeTranscriptDirty() {
+  bool d = s_trDirty;
+  s_trDirty = false;
+  return d;
+}
+
+void VoiceSession::copyTranscript(char *dst, size_t cap) {
+  if (!dst || cap == 0) return;
+  portENTER_CRITICAL(&s_trMux);
+  size_t n = (size_t)s_trLen < cap - 1 ? (size_t)s_trLen : cap - 1;
+  memcpy(dst, s_tr, n);
+  dst[n] = 0;
+  portEXIT_CRITICAL(&s_trMux);
+}
 
 VoiceSession::Stats VoiceSession::stats() {
   Stats s = s_st;

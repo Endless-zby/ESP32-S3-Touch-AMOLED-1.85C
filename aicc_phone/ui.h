@@ -28,11 +28,10 @@ void ui_face_listening(bool on);          // purple breathing ring (now: the ass
 void ui_face_caption(const char *text);   // assistant transcript under the eyes ("" hides it)
 void ui_screen_sleep(bool sleep);         // backlight off / on (face stays loaded)
 bool ui_screen_asleep();
-void ui_settings_back();
+void ui_settings_back();                  // info -> menu, menu -> face
 void ui_brightness_adjust(int delta);
-int ui_brightness();   // voice command: step the backlight, clamped 20..100   // info -> menu, menu -> face   // purple breathing ring: wake word heard, waiting for a command
+int ui_brightness();   // voice command: step the backlight, clamped 20..100
 
-void ui_show_boot(const char *status);
 void ui_boot_status(const char *status);
 
 void ui_show_setup(const char *apSsid, const char *apPass, const char *url);
@@ -45,7 +44,6 @@ void ui_set_net_status(bool wifiOk, const char *sipText, uint32_t colorHex);
 void ui_show_call(const char *party, const char *status);
 void ui_call_status(const char *status);
 void ui_call_timer(uint32_t seconds, bool show);
-void ui_call_levels(uint8_t mic, uint8_t spk);
 void ui_set_muted(bool muted);
 void ui_set_volume(int percent);
 

@@ -67,9 +67,6 @@ uint8_t linear_to_alaw(int16_t pcm) {
   return a ^ mask;
 }
 
-int16_t ulaw_to_linear(uint8_t u) { return s_ulaw_tab[u]; }
-int16_t alaw_to_linear(uint8_t a) { return s_alaw_tab[a]; }
-
 void g711_encode(const int16_t *pcm, uint8_t *out, size_t n, bool alaw) {
   if (alaw) for (size_t i = 0; i < n; i++) out[i] = linear_to_alaw(pcm[i]);
   else for (size_t i = 0; i < n; i++) out[i] = linear_to_ulaw(pcm[i]);

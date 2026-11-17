@@ -780,7 +780,6 @@ void ui_init(const UiCallbacks &cb) {
 
 UiScreen ui_screen() { return s_screen; }
 
-void ui_show_boot(const char *status) { ui_boot_status(status); load(scr_boot, UI_BOOT); }
 void ui_boot_status(const char *status) { lv_label_set_text(boot_status, status); }
 
 void ui_show_setup(const char *apSsid, const char *apPass, const char *url) {
@@ -824,9 +823,6 @@ void ui_call_status(const char *status) { lv_label_set_text(call_status, status)
 void ui_call_timer(uint32_t seconds, bool show) {
   if (!show) { lv_label_set_text(call_timer, ""); return; }
   lv_label_set_text_fmt(call_timer, "%02lu:%02lu", (unsigned long)(seconds / 60), (unsigned long)(seconds % 60));
-}
-void ui_call_levels(uint8_t mic, uint8_t spk) {
-  (void)mic; (void)spk;   // the new call page shows the timer, not level bars
 }
 void ui_set_muted(bool muted) {
   s_muted = muted;

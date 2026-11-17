@@ -131,11 +131,3 @@ bool es7210_board_set_gain(uint8_t mic, uint8_t gainCode) {
   return s_ok;
 }
 
-void es7210_board_dump() {
-  Serial.print("[ES7210] regs:");
-  for (uint8_t reg = 0x00; reg <= 0x4C; reg++) {
-    if (reg % 16 == 0) Serial.printf("\n  %02x:", reg);
-    Serial.printf(" %02x", r(reg));
-  }
-  Serial.println();
-}

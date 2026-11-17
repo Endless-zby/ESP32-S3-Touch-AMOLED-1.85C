@@ -38,6 +38,7 @@ static uint32_t g_callConnectedAt = 0;
 static uint32_t g_endedAt = 0;              // when the "call ended" screen was shown
 static uint32_t g_lastRtpCheck = 0;
 static uint32_t g_lastUiTick = 0;
+static uint32_t g_settingsSaveAt = 0;   // debounced NVS write (voice volume commands)
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -356,7 +357,7 @@ void setup() {
       g_settings.volume = constrain(level, 0, 100);
       audio_set_volume(g_settings.volume);
       ui_set_volume(g_settings.volume);
-      g_settings.save();
+      g_settingsSaveAt = millis() + 3000;   // persist once, when the guest stops adjusting
     };
     h.getVolume = []() -> int { return g_settings.volume; };
     h.setBrightness = [](int level) { ui_brightness_adjust(level - ui_brightness()); };
@@ -414,6 +415,11 @@ void loop() {
   }
 
   uint32_t now = millis();
+
+  if (g_settingsSaveAt && (int32_t)(now - g_settingsSaveAt) >= 0) {
+    g_settingsSaveAt = 0;
+    g_settings.save();
+  }
 
   // Touch while asleep wakes the screen and starts a conversation; touch while
   // awake just postpones the screen-off.

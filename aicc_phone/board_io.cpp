@@ -26,11 +26,6 @@ bool i2c_write_reg(uint8_t addr, uint8_t reg, const uint8_t *data, size_t len) {
   return Wire.endTransmission(true) == 0;
 }
 
-bool i2c_probe(uint8_t addr) {
-  Wire.beginTransmission(addr);
-  return Wire.endTransmission(true) == 0;
-}
-
 // ---------------------------------------------------------------------------
 // TCA9554PWR
 // ---------------------------------------------------------------------------

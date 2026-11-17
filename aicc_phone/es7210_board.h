@@ -9,4 +9,3 @@
 //             12=34.5 13=36 14=37.5 dB
 bool es7210_board_init(uint32_t sampleRate, uint8_t micGainCode, uint8_t refGainCode);
 bool es7210_board_set_gain(uint8_t mic /*1..4*/, uint8_t gainCode);
-void es7210_board_dump();   // print the register map to Serial

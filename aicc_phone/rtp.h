@@ -12,21 +12,15 @@ class RtpSession {
   // Remote media description (from SDP). `pt` is the payload type we send.
   void setRemote(IPAddress ip, uint16_t port, uint8_t pt, int dtmfPt);
   void clearRemote();
-  bool hasRemote() const { return _remotePort != 0; }
 
   // Send one 20 ms frame of 8 kHz PCM (FRAME_8K samples).
   void sendFrame(const int16_t *pcm);
-  // Send a packet of silence/comfort noise placeholder to open NAT pinholes.
-  void sendKeepalive();
-
   // Read all pending datagrams into the jitter buffer.
   void pump();
   // Pop one decoded frame (FRAME_8K samples). Returns false when nothing to play.
   bool popFrame(int16_t *pcm);
 
   uint32_t lastRxMs() const { return _lastRxMs; }
-  uint32_t rxPackets() const { return _rxPackets; }
-  uint32_t txPackets() const { return _txPackets; }
   // diagnostics (reset by statsReset)
   uint32_t statUnderruns() const { return _underruns; }
   uint32_t statDrops() const { return _drops; }

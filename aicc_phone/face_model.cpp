@@ -79,7 +79,6 @@ void FaceModel::begin() {
 }
 
 void FaceModel::setExpression(int id) { if (id >= 0 && id < EX_COUNT) _expr = id; }
-const char *FaceModel::expressionName() const { return EXPRS[_expr].name; }
 
 void FaceModel::setGazeOverride(bool on, float gx, float gy) {
   _gazeOverride = on;

@@ -15,8 +15,8 @@ enum State { VS_OFF = 0, VS_CONNECTING, VS_READY, VS_ERROR };
 
 struct Event {
   enum Kind { NONE = 0, CONNECTED, FAILED, CLOSED, USER_SPEECH_START, USER_SPEECH_STOP,
-              AI_SPEAKING, AI_IDLE, TRANSCRIPT, TOOL_CALL, RESPONSE_DONE } kind = NONE;
-  String text;        // TRANSCRIPT: text so far of the current reply; FAILED: reason
+              TOOL_CALL, RESPONSE_DONE } kind = NONE;
+  String text;        // FAILED: reason
   String toolName;    // TOOL_CALL
   String toolArgs;    // TOOL_CALL (JSON string)
   String callId;      // TOOL_CALL
@@ -35,8 +35,6 @@ struct Config {
 
 bool begin(const Config &cfg);   // connect + configure the session (async)
 void end();                      // close the socket, drop audio
-State state();
-bool connected();
 
 // Called from the Arduino loop: next pending event (false = none).
 bool poll(Event &ev);
@@ -54,12 +52,16 @@ int  popPlay(int16_t *out, int samples);                   // PCM at outRate; re
 bool playbackActive();                                      // ring has data / preroll satisfied
 uint32_t playbackRate();
 
-// activity timestamps (millis) for the idle timer
+// activity timestamp (millis) for the idle timer
 uint32_t lastUserSpeechMs();
-uint32_t lastAiSpeechMs();
+
+// Reply caption. The ws task keeps it in a fixed buffer; the UI polls it at its
+// own rate (4x/s) instead of paying one String per transcript delta.
+bool takeTranscriptDirty();                 // true once per change
+void copyTranscript(char *dst, size_t cap); // NUL-terminated, may be empty
 
 // diagnostics
-struct Stats { uint32_t txChunks, rxAudioBytes, events, playUnderruns, playDrops, frames, bytesIn, micDrops; int playDepthMs; };
+struct Stats { uint32_t txChunks, rxAudioBytes, events, playUnderruns, playDrops, bytesIn, micDrops; int playDepthMs; };
 Stats stats();
 
 }  // namespace VoiceSession

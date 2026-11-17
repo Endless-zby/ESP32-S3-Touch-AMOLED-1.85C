@@ -64,11 +64,6 @@ void RtpSession::sendFrame(const int16_t *pcm) {
   }
 }
 
-void RtpSession::sendKeepalive() {
-  static int16_t silence[FRAME_8K] = {0};
-  sendFrame(silence);
-}
-
 void RtpSession::pump() {
   for (int guard = 0; guard < 16; guard++) {
     int len = _udp.parsePacket();

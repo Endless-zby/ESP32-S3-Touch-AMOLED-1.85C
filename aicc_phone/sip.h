@@ -67,8 +67,6 @@ class SipClient {
   SipRegState regState() const { return _reg; }
   const String &remoteParty() const { return _remoteParty; }
   const String &lastStatus() const { return _lastStatus; }
-  String publicAddress() const;
-  bool publicKnown() const { return _pubKnown; }
 
   std::function<void(SipCallState)> onCallState;
   std::function<void(SipRegState)> onRegState;
