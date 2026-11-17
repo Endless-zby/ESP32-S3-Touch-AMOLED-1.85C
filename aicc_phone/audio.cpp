@@ -55,9 +55,9 @@ static volatile uint8_t s_micLevel = 0, s_spkLevel = 0;
 static volatile uint16_t s_echoGain = 0;     // learned mic/ref ratio when only echo is present
 static volatile uint8_t s_nearMaxRatio = 0;  // max raw/ref ratio seen in the window
 
-// The xiaozhi-esp32 way: a model VAD (esp_vad, VAD_MODE_0 / 30 ms) runs on the
-// *echo-cancelled* signal; when it reports speech while we are playing, that is
-// the barge-in trigger (their AFE VAD drives the same "abort TTS" path).
+// Local VAD (esp_vad, VAD_MODE_0 / 30 ms, min noise 100 ms as in xiaozhi's AFE
+// config) on the *echo-cancelled* signal. xiaozhi uses it for the LED only and
+// so do we (face expression); it never cuts a reply.
 struct Vad {
   vad_handle_t h = nullptr;
   int16_t buf[480]; int have = 0;                 // AEC gives 20 ms frames, VAD wants 30 ms
@@ -84,7 +84,6 @@ struct Vad {
     }
   }
 };
-static volatile bool s_bargeFlag = false;      // consumed by the assistant
 static Vad s_vad;
 static RtpSession *s_rtp = NULL;
 static TaskHandle_t s_task = NULL;
@@ -181,14 +180,9 @@ uint8_t audio_mic_level() { return s_micLevel; }
 uint8_t audio_spk_level() { return s_spkLevel; }
 AudioMode audio_mode() { return s_mode; }
 
-// Barge-in (read-and-clear): the local VAD heard speech over the echo-cancelled
-// signal while the assistant was playing. Mirrors xiaozhi's AFE VAD -> abort path.
-bool audio_take_barge() {
-  if (!s_bargeFlag) return false;
-  s_bargeFlag = false;
-  return true;
-}
-
+// Local VAD state on the echo-cancelled signal. As in xiaozhi-esp32 this only
+// drives the UI: the decision to interrupt a reply is the server's (it hears the
+// same AEC output and sends input_audio_buffer.speech_started).
 bool audio_vad_state() { return s_vad.state == VAD_SPEECH; }
 
 void audio_set_mode(AudioMode m) {
@@ -383,9 +377,10 @@ struct Aec {
     if (m == 0) return false;
     // 1 = full-duplex low cost + very aggressive NLP (what xiaozhi-esp32 uses on this board)
     // 2 = VoIP high performance, 3 = full-duplex high performance
-    // The same filter xiaozhi-esp32 runs on this board (AFE_TYPE_FD low cost +
-    // VERYAGGR). Barge-in is not expected to come from the server VAD: the local
-    // esp_vad below listens on the echo-cancelled signal and triggers the cancel.
+    // Identical to xiaozhi-esp32's AFE on this board (afe_audio_engine.cc):
+    // AFE_TYPE_FD + AFE_MODE_LOW_COST, aec_mode FD_LOW_COST, nlp VERYAGGR,
+    // filter 4, NS off, AGC off. The server listens to this output and decides
+    // when the guest talks over a reply.
     aec_mode_t am = AEC_MODE_FD_LOW_COST;
     aec_nlp_level_t nlp = AEC_NLP_LEVEL_VERYAGGR;
     if (m == 2) { am = AEC_MODE_VOIP_HIGH_PERF; nlp = AEC_NLP_LEVEL_AGGR; }
@@ -541,10 +536,7 @@ static void audio_task(void *) {
   // 2 s window statistics (peak of per-frame peaks)
   uint8_t wSlot[4] = {0, 0, 0, 0}, wMic = 0, wOut = 0, wRef = 0, wSpk = 0;
   uint16_t wFrames = 0, wFarActive = 0, wNearOut = 0;   // frames with speaker active / with AEC output > 5%
-  uint16_t wVad = 0;         // times the local VAD reported speech over the AEC output
-  uint16_t bargeRun = 0;     // consecutive loud VAD-speech frames (barge-in qualifier)
-  uint16_t wVadFrames = 0, wVadLoud = 0;   // 20 ms frames the VAD called speech / of those loud enough
-  bool bargeFired = false;   // one barge-in per speech run
+  uint16_t wVadFrames = 0;   // 20 ms frames the local VAD called speech (diagnostic only)
   uint32_t farHold = 0;      // ms since the far end was last active (counts down)
   uint32_t wMaxUs = 0;       // longest frame processing time in the window
   uint16_t wLate = 0;        // frames that took longer than 20 ms
@@ -583,7 +575,7 @@ static void audio_task(void *) {
         s_playPos16 = 0;
         s_echoGain = 0; s_nearMaxRatio = 0;
         if (s_aecMode != 0) s_aec.start(s_aecMode);
-        if (m == AUDIO_VOICE) { s_bargeFlag = false; s_vad.start(); }
+        if (m == AUDIO_VOICE) s_vad.start();
         else s_vad.stop();
       } else if (s_aec.active()) {
         s_aec.stop();
@@ -689,23 +681,11 @@ static void audio_task(void *) {
         if (s_aec.process(mic16, ref16, clean16)) src = clean16;
         else memset(clean16, 0, sizeof(clean16)), src = clean16;  // priming: send silence for the first chunk
         aecUsed = true;
-        // Barge-in: the local VAD hears the guest over the echo-cancelled signal
-        // and stops the reply without waiting for the server (xiaozhi's flow).
+        // Local VAD (xiaozhi: AFE VAD, VAD_MODE_0, min noise 100 ms) on the AEC
+        // output. UI only; no local decision is taken from it.
         if (m == AUDIO_VOICE && s_vad.h) {
-          // The VAD alone is not enough: at the onset of a reply the AEC has not
-          // converged yet and 100-300 ms of residual echo is "speech" to it (the
-          // greeting cut itself off after one word). Require the VAD to stay on
-          // for BARGE_MIN_MS *and* the cancelled signal to be clearly louder than
-          // residual echo during that time. One trigger per speech run.
           s_vad.push(clean16, FRAME_16K);
-          const uint8_t outLv = level_of(clean16, FRAME_16K);
-          if (s_vad.state == VAD_SPEECH) {
-            wVadFrames++;
-            if (outLv >= BARGE_MIN_LEVEL) { bargeRun++; wVadLoud++; }
-            if (bargeRun >= BARGE_MIN_MS / FRAME_MS && !bargeFired) { bargeFired = true; s_bargeFlag = true; wVad++; }
-          } else {
-            bargeRun = 0; bargeFired = false;
-          }
+          if (s_vad.state == VAD_SPEECH) wVadFrames++;
         }
         // Residual echo suppression. Only the *quiet* tail of a loud far end is
         // attenuated: the previous "output 9.5 dB below the raw mic" test also
@@ -822,10 +802,10 @@ static void audio_task(void *) {
         lastStat = now;
         if (m == AUDIO_VOICE) {
           VoiceSession::Stats vs = VoiceSession::stats();
-          Serial.printf("[VOICE] aec %lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% res=%u%% refclip=%u%% g=%u r=%u vad=%u/%u/%u | tx=%lu rxAudio=%lu depth=%dms under=%lu drop=%lu micdrop=%lu heap=%u\n",
+          Serial.printf("[VOICE] aec %lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% res=%u%% refclip=%u%% g=%u r=%u vad=%u | tx=%lu rxAudio=%lu depth=%dms under=%lu drop=%lu micdrop=%lu heap=%u\n",
                         (unsigned long)(s_aec.procCount ? s_aec.procUs / s_aec.procCount : 0), (unsigned long)wMaxUs, wLate,
                         wMic, wOut, wRef, wSpk, wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? resFrames * 100 / wFrames : 0,
-                        wFrames ? refClip * 100 / wFrames : 0, (unsigned)s_echoGain, (unsigned)s_nearMaxRatio, (unsigned)wVad, (unsigned)wVadLoud, (unsigned)wVadFrames,
+                        wFrames ? refClip * 100 / wFrames : 0, (unsigned)s_echoGain, (unsigned)s_nearMaxRatio, (unsigned)wVadFrames,
                         (unsigned long)vs.txChunks, (unsigned long)vs.rxAudioBytes, vs.playDepthMs, (unsigned long)vs.playUnderruns,
                         (unsigned long)vs.playDrops, (unsigned long)vs.micDrops, (unsigned)ESP.getFreeHeap());
           s_aec.procUs = 0; s_aec.procCount = 0; s_aec.procMaxUs = 0;
@@ -849,7 +829,7 @@ static void audio_task(void *) {
           s_rtp->statsReset();
         }
         memset(wSlot, 0, sizeof(wSlot)); wMic = wOut = wRef = wSpk = 0; wFrames = wFarActive = wNearOut = 0; resFrames = 0; wMaxUs = 0; wLate = 0;
-        micFails = 0; wrFails = 0; refClip = 0; s_nearMaxRatio = 0; wVad = 0; wVadFrames = 0; wVadLoud = 0;
+        micFails = 0; wrFails = 0; refClip = 0; s_nearMaxRatio = 0; wVadFrames = 0;
       }
 #endif
       continue;

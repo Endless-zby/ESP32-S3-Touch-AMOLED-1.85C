@@ -45,9 +45,6 @@ void sendToolResult(const String &callId, const String &outputJson);
 void requestResponse(const String &instructions);
 // Drop everything buffered for playback (barge-in).
 void flushPlayback();
-// Barge-in: stop the current reply (drop buffered + in-flight audio, cancel the
-// response). Triggered by the local VAD on the echo-cancelled signal.
-void bargeIn();
 
 // ---- audio-task side ----
 void pushMic(const int16_t *pcm16k, int samples);          // after AEC

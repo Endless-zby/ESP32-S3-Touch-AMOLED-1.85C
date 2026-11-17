@@ -23,11 +23,9 @@ bool s_pendingDial = false;        // call_front_desk accepted: dial after the m
 uint32_t s_pendingDialAt = 0;
 bool s_greetAfterCall = false;
 uint32_t s_lastSpeakingUi = 0;
-uint32_t s_speakStartAt = 0;   // when the current reply started playing
+
 uint8_t s_stallRetries = 0;    // uplink stall -> session restarts in a row
 uint8_t s_failedRetries = 0;   // connect failures -> immediate retries
-bool s_bargeArmed = false;     // armed only after the VAD has been quiet since the reply started
-uint32_t s_bargeSilentAt = 0;
 
 const char *kToolsJson =
   "["
@@ -299,7 +297,6 @@ void assistant_loop() {
         runTool(ev);
         break;
       case VoiceSession::Event::RESPONSE_DONE:
-        s_bargeArmed = false; s_bargeSilentAt = 0;
         if (s_pendingDial) s_pendingDialAt = now + 1500;   // let the last audio drain, then dial
         break;
       default: break;
@@ -344,26 +341,12 @@ void assistant_loop() {
         break;
       }
       const bool speaking = VoiceSession::playbackActive() || audio_spk_level() > 3;
-      if (speaking && now - s_lastSpeakingUi > 600) s_speakStartAt = now;   // new reply (600 ms of silence before it)
-      // xiaozhi-style barge-in: the local VAD (on the echo-cancelled signal)
-      // heard the guest; stop the reply immediately, then the server takes over.
-      // Barge-in is edge-triggered (audio side) and re-armed here: after a reply
-      // starts it stays disarmed until the VAD has been quiet for 400 ms, so the
-      // tail of "继续讲" cannot instantly cancel the reply it just asked for.
-      if (!s_bargeArmed) {
-        (void)audio_take_barge();   // discard any edge seen while disarmed
-        if (!audio_vad_state()) {
-          if (!s_bargeSilentAt) s_bargeSilentAt = now;
-          else if (now - s_bargeSilentAt > 400) s_bargeArmed = true;
-        } else {
-          s_bargeSilentAt = 0;
-        }
-      } else if (audio_take_barge() && speaking && now - s_sessionStartAt > 1500 && now - s_speakStartAt > BARGE_MIN_PLAY_MS) {
-        Serial.println("[ASSIST] barge-in (local VAD)");
-        VoiceSession::bargeIn();
-        s_bargeArmed = false; s_bargeSilentAt = 0;
-        ui_face_set_expr(EX_USER_SPEAKING);
-      }
+      // Interruptions (xiaozhi-esp32 realtime mode): the microphone keeps streaming
+      // through the AEC while the reply plays and the *server* decides when the
+      // guest is talking over it. Its input_audio_buffer.speech_started flushes
+      // local playback and cancels the response (voice_session.cpp); nothing is
+      // cut locally. The local VAD only colours the face.
+      if (speaking && audio_vad_state()) ui_face_set_expr(EX_USER_SPEAKING);
       if (speaking) { s_lastActivity = now; s_lastSpeakingUi = now; }
       if (speaking) ui_face_set_expr(EX_SPEAKING);
       else if (now - s_lastSpeakingUi > 600 && now - VoiceSession::lastUserSpeechMs() > 1500) ui_face_set_expr(EX_LISTENING);
