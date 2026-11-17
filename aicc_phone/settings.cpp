@@ -30,6 +30,17 @@ void Settings::load() {
   refDigGain = p.getUChar("rdig", DEF_REF_DIG_GAIN);
   resSuppress = p.getBool("rsup", DEF_RES_SUPPRESS);
   wakeSens = p.getUChar("wsens", DEF_WAKE_SENSITIVITY);
+  aiKey = p.getString("aikey", "");
+  aiHost = p.getString("aihost", DEF_AI_HOST);
+  aiModel = p.getString("aimodel", DEF_AI_MODEL);
+  aiVoice = p.getString("aivoice", DEF_AI_VOICE);
+  aiExtra = p.getString("aiextra", DEF_AI_EXTRA);
+  aiOutRate = p.getUInt("airate", DEF_AI_OUT_RATE);
+  aiIdleSec = p.getUShort("aiidle", DEF_AI_IDLE_SEC);
+  if (aiHost.length() == 0) aiHost = DEF_AI_HOST;
+  if (aiModel.length() == 0) aiModel = DEF_AI_MODEL;
+  if (aiOutRate < 8000 || aiOutRate > 48000) aiOutRate = DEF_AI_OUT_RATE;
+  if (aiIdleSec < 20) aiIdleSec = DEF_AI_IDLE_SEC;
   if (wakeSens > 2) wakeSens = DEF_WAKE_SENSITIVITY;
   p.end();
   if (cfgv < AUDIO_CFG_VERSION) {
@@ -77,6 +88,13 @@ void Settings::save() {
   p.putUChar("rdig", refDigGain);
   p.putBool("rsup", resSuppress);
   p.putUChar("wsens", wakeSens);
+  p.putString("aikey", aiKey);
+  p.putString("aihost", aiHost);
+  p.putString("aimodel", aiModel);
+  p.putString("aivoice", aiVoice);
+  p.putString("aiextra", aiExtra);
+  p.putUInt("airate", aiOutRate);
+  p.putUShort("aiidle", aiIdleSec);
   p.putUChar("cfgv", AUDIO_CFG_VERSION);
   p.end();
 }

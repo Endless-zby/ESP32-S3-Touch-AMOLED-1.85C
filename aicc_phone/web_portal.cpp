@@ -64,6 +64,14 @@ button.sec{background:#3a4152}button.warn{background:#b23b3b}
 <label>唤醒灵敏度（唤醒词“你好小安”）</label><select id="wsens"><option value="0">标准</option><option value="1">宽松（更容易唤醒，误唤醒略多）</option><option value="2">严格（更少误唤醒）</option></select>
 <button onclick="saveSip()">保存 SIP 设置并重启</button>
 </div>
+<div class="card"><h2>3. 语音助手（Qwen Realtime，直连）</h2>
+<label>DashScope API Key</label><input id="aikey" type="password" placeholder="sk-...">
+<div class="row"><div><label>模型</label><input id="aimodel"></div><div><label>音色（留空=默认）</label><input id="aivoice" placeholder="longanqian_v3.1"></div></div>
+<label>接入地址（主机名）</label><input id="aihost" placeholder="dashscope.aliyuncs.com 或 <WorkspaceId>.cn-beijing.maas.aliyuncs.com">
+<div class="row"><div><label>回复音频采样率</label><select id="airate"><option value="24000">24000</option><option value="16000">16000</option><option value="48000">48000</option><option value="8000">8000</option></select></div><div><label>无人说话多久休眠 (秒)</label><input id="aiidle" type="number" min="20" max="3600"></div></div>
+<label>酒店信息（附加到提示词，例如：酒店名、Wi-Fi 密码、早餐与退房时间）</label><input id="aiextra" placeholder="军阅国际酒店，早餐 7:00-10:00 在二楼，退房时间 12:00">
+<button onclick="saveSip()">保存并重启</button>
+</div>
 <div class="card"><h2>设备</h2>
 <div class="muted" id="info"></div>
 <button class="warn" onclick="resetWifi()">清除 Wi-Fi 配置</button>
@@ -98,14 +106,14 @@ function poll(n){
 }
 function load(){
   fetch('/config').then(r=>r.json()).then(c=>{
-    ['sserver','sport','dial','suser','spass','dname','vol','mic','aec','mslot','rslot','rdelay','afilt','rgain','rdig','mpga','rsup','wsens'].forEach(k=>$(k).value=c[k]);
+    ['sserver','sport','dial','suser','spass','dname','vol','mic','aec','mslot','rslot','rdelay','afilt','rgain','rdig','mpga','rsup','wsens','aikey','aimodel','aivoice','aihost','airate','aiidle','aiextra'].forEach(k=>$(k).value=c[k]);
     $('sreg').value=c.sreg?'1':'0';
     $('info').textContent='固件 '+c.fw+' | 热点 '+c.ap+' | 当前 Wi-Fi: '+(c.wifi||'未配置')+' | IP: '+(c.ip||'-');
   });
 }
 function saveSip(){
   var b=new URLSearchParams();
-  ['sserver','sport','dial','suser','spass','dname','sreg','vol','mic','aec','mslot','rslot','rdelay','afilt','rgain','rdig','mpga','rsup','wsens'].forEach(k=>b.append(k,$(k).value));
+  ['sserver','sport','dial','suser','spass','dname','sreg','vol','mic','aec','mslot','rslot','rdelay','afilt','rgain','rdig','mpga','rsup','wsens','aikey','aimodel','aivoice','aihost','airate','aiidle','aiextra'].forEach(k=>b.append(k,$(k).value));
   fetch('/sip',{method:'POST',body:b}).then(r=>r.text()).then(t=>alert(t));
 }
 function resetWifi(){if(confirm('确定清除 Wi-Fi 配置并重启？'))fetch('/reset',{method:'POST'}).then(()=>alert('已清除，设备重启后会重新开启热点'))}
@@ -222,6 +230,13 @@ static void handleConfig() {
   out += "\"mpga\":" + String(s.micPga) + ",";
   out += "\"rsup\":" + String(s.resSuppress ? 1 : 0) + ",";
   out += "\"wsens\":" + String(s.wakeSens) + ",";
+  out += "\"aikey\":\"" + jsonEscape(s.aiKey) + "\",";
+  out += "\"aimodel\":\"" + jsonEscape(s.aiModel) + "\",";
+  out += "\"aivoice\":\"" + jsonEscape(s.aiVoice) + "\",";
+  out += "\"aihost\":\"" + jsonEscape(s.aiHost) + "\",";
+  out += "\"airate\":" + String(s.aiOutRate) + ",";
+  out += "\"aiidle\":" + String(s.aiIdleSec) + ",";
+  out += "\"aiextra\":\"" + jsonEscape(s.aiExtra) + "\",";
   out += "\"fw\":\"" FW_VERSION "\",";
   out += "\"ap\":\"" + jsonEscape(s_apSsid) + "\",";
   out += "\"wifi\":\"" + jsonEscape(s.wifiSsid) + "\",";
@@ -250,6 +265,13 @@ static void handleSip() {
   if (s_server.hasArg("mpga")) s.micPga = constrain(s_server.arg("mpga").toInt(), 0, 14);
   if (s_server.hasArg("rsup")) s.resSuppress = s_server.arg("rsup").toInt() != 0;
   if (s_server.hasArg("wsens")) s.wakeSens = constrain(s_server.arg("wsens").toInt(), 0, 2);
+  if (s_server.hasArg("aikey")) { s.aiKey = s_server.arg("aikey"); s.aiKey.trim(); }
+  if (s_server.hasArg("aimodel")) { s.aiModel = s_server.arg("aimodel"); s.aiModel.trim(); }
+  if (s_server.hasArg("aivoice")) { s.aiVoice = s_server.arg("aivoice"); s.aiVoice.trim(); }
+  if (s_server.hasArg("aihost")) { s.aiHost = s_server.arg("aihost"); s.aiHost.trim(); s.aiHost.replace("wss://", ""); s.aiHost.replace("https://", ""); int sl = s.aiHost.indexOf('/'); if (sl > 0) s.aiHost = s.aiHost.substring(0, sl); }
+  if (s_server.hasArg("airate")) s.aiOutRate = constrain(s_server.arg("airate").toInt(), 8000, 48000);
+  if (s_server.hasArg("aiidle")) s.aiIdleSec = constrain(s_server.arg("aiidle").toInt(), 20, 3600);
+  if (s_server.hasArg("aiextra")) s.aiExtra = s_server.arg("aiextra");
   if (s_server.hasArg("aec")) s.aecMode = constrain(s_server.arg("aec").toInt(), 0, 3);
   s.sipServer.trim(); s.dialNumber.trim(); s.sipUser.trim();
   if (s.sipPort == 0) s.sipPort = DEF_SIP_PORT;

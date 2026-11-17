@@ -28,11 +28,19 @@ echo "CJK chars: $CHARS"
 gen() {
   local size=$1 name=$2
   npx --yes lv_font_conv@1.5.3 --bpp 4 --size "$size" --format lvgl --lv-include lvgl.h \
-    --no-compress --lv-font-name "$name" \
+    --no-compress --lv-font-name "$name" --lv-fallback font_cjk_16 \
     --font "$CJK_FONT" --symbols "$CHARS" -r 0x20-0x7E \
     --font "$FA_FONT" -r "$SYMS" \
     -o "$SK/$name.c"
   echo "generated $SK/$name.c ($(wc -c < "$SK/$name.c") bytes)"
 }
+# Full GB2312 (6763 chars) at 16 px / 2 bpp (~430 KB): the transcript caption
+# shows whatever the cloud model says, so it needs the whole character set.
+npx --yes lv_font_conv@1.5.3 --bpp 2 --size 16 --format lvgl --lv-include lvgl.h \
+  --no-compress --lv-font-name font_cjk_16 \
+  --font "$CJK_FONT" -r 0x20-0x7E --symbols "$(cat "$FONTDIR/gb2312_chars.txt")" \
+  -o "$SK/font_cjk_16.c"
+echo "generated $SK/font_cjk_16.c ($(wc -c < "$SK/font_cjk_16.c") bytes)"
+
 gen 18 font_cn_18
 gen 24 font_cn_24

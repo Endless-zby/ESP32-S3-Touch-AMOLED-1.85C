@@ -23,6 +23,14 @@ struct Settings {
   uint8_t refDigGain;  // software reference gain x1..x8
   bool resSuppress;    // residual echo suppression
   uint8_t wakeSens;    // wake word sensitivity 0 std, 1 relaxed, 2 strict
+  // Qwen Realtime
+  String aiKey;        // DashScope API key
+  String aiHost;
+  String aiModel;
+  String aiVoice;
+  String aiExtra;      // extra prompt facts (hotel name, room, wifi ...)
+  uint32_t aiOutRate;
+  uint16_t aiIdleSec;  // sleep after this many seconds of silence
 
   void load();
   void save();

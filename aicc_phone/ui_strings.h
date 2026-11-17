@@ -45,6 +45,12 @@
 #define STR_VOLUME          "音量"
 #define STR_AI_AGENT        "AI 客服"
 #define STR_LISTENING       "在听..."
+#define STR_AI_CONNECTING   "正在连接小安..."
+#define STR_AI_OFFLINE      "语音助手暂不可用"
+#define STR_AI_NO_KEY       "未配置 API Key"
+#define STR_AI_BYE          "再见"
+#define STR_SLEEPING        "休眠"
+#define STR_AI_CALLING      "正在为您接通前台..."
 
 
 #define STR_SETTINGS        "设置"

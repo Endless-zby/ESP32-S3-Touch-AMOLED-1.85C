@@ -13,6 +13,7 @@
 #include "ui_strings.h"
 #include "audio.h"
 #include "wake_word.h"
+#include "assistant.h"
 #include "face_model.h"
 #include "rtp.h"
 #include "sip.h"
@@ -21,15 +22,9 @@
 static SipClient g_sip;
 static RtpSession g_rtp;
 
-// Voice commands: the wake word opens a short window in which volume / call
-// commands are accepted, so random table talk does not dial the front desk.
-// The wake word is acknowledged with a chime + "在听..." so it is obvious when
-// to speak the command (Xiaoai-style: call first, then the instruction).
-static uint32_t g_awakeUntil = 0;
-static bool g_awakeActive = false;
-static uint32_t g_dialAt = 0;          // delayed dial so the OK chime is audible
-static String g_dialNumber;
-static const uint32_t kAwakeWindowMs = 8000;
+// Voice assistant: "你好小安" (local WakeNet) wakes the device, then a Qwen
+// Realtime session carries the conversation and drives volume / brightness /
+// front-desk calls through function calling (see assistant.cpp).
 
 enum NetState { NET_IDLE, NET_CONNECTING, NET_CONNECTED, NET_SETUP };
 static NetState g_net = NET_IDLE;
@@ -98,10 +93,7 @@ static void startSip() {
 static void onCallState(SipCallState s) {
   switch (s) {
     case SIP_CALL_INVITING:
-      g_awakeActive = false;
-      g_awakeUntil = 0;
-      WakeWord::endCommandWindow();
-      ui_face_listening(false);
+      assistant_on_call_started();
       ui_show_call(g_sip.remoteParty().c_str(), STR_CALLING);
       audio_set_mode(AUDIO_IDLE);
       break;
@@ -110,9 +102,7 @@ static void onCallState(SipCallState s) {
       if (audio_mode() != AUDIO_CALL) audio_set_mode(AUDIO_RINGBACK);
       break;
     case SIP_CALL_INCOMING:
-      g_awakeActive = false;
-      g_awakeUntil = 0;
-      WakeWord::endCommandWindow();
+      assistant_on_call_started();
       ui_show_incoming(g_sip.remoteParty().c_str());
       audio_set_mode(AUDIO_RINGING);
       break;
@@ -137,6 +127,7 @@ static void onCallState(SipCallState s) {
       g_endedAt = millis();
       g_callConnectedAt = 0;
       Serial.printf("[APP] call ended: %s\n", g_sip.lastStatus().c_str());
+      assistant_on_call_ended();
       break;
     }
   }
@@ -356,9 +347,27 @@ void setup() {
   audio_set_aec_filter(g_settings.aecFilter);
   audio_start_task(&g_rtp);
 
-  // Wake word / command words (ESP-SR MultiNet7, model pack in the "model" partition)
+  // Wake word (ESP-SR WakeNet9, model pack in the "model" partition) + assistant
   WakeWord::begin();
   WakeWord::setSensitivity(g_settings.wakeSens);
+  {
+    AssistantHooks h;
+    h.setVolume = [](int level) {
+      g_settings.volume = constrain(level, 0, 100);
+      audio_set_volume(g_settings.volume);
+      ui_set_volume(g_settings.volume);
+      g_settings.save();
+    };
+    h.getVolume = []() -> int { return g_settings.volume; };
+    h.setBrightness = [](int level) { ui_brightness_adjust(level - ui_brightness()); };
+    h.getBrightness = []() -> int { return ui_brightness(); };
+    h.dialFrontDesk = []() -> bool {
+      if (WiFi.status() != WL_CONNECTED || !g_sipStarted || !g_sip.isIdle()) return false;
+      return g_sip.call(g_settings.dialNumber);
+    };
+    h.phoneBusy = []() -> bool { return !g_sip.isIdle(); };
+    assistant_begin(h);
+  }
   pinMode(0, INPUT_PULLUP);   // BOOT button (also the ESP32-S3 boot strap)
 
   g_sip.onCallState = onCallState;
@@ -383,96 +392,9 @@ void loop() {
   if (g_sipStarted) g_sip.loop();
   netLoop();
 
-  // Voice commands: wake word first, then volume / call commands inside the window.
-  {
-    int wcmd = -1;
-    float wprob = 0;
-    char wphrase[48];
-    if (WakeWord::consume(wcmd, wprob, wphrase, sizeof(wphrase))) {
-      Serial.printf("[WAKE] event cmd=%d \"%s\" prob=%.2f\n", wcmd, wphrase, (double)wprob);
-      const uint32_t wnow = millis();
-      const bool awake = (int32_t)(wnow - g_awakeUntil) < 0;
-      switch (wcmd) {
-        case WAKE_CMD_WAKE:
-          if (!g_sip.isIdle()) break;            // never during a call
-          g_awakeUntil = wnow + kAwakeWindowMs;
-          g_awakeActive = true;
-          audio_prompt(AUDIO_PROMPT_WAKE);
-          WakeWord::startCommandWindow();        // MultiNet takes the microphone for the window
-          ui_face_listening(true);
-          ui_face_set_expr(EX_ATTENTIVE);
-          break;
-        case WAKE_CMD_VOL_UP:
-        case WAKE_CMD_VOL_UP2:
-          if (!awake) break;
-          uiVolume(+10);
-          audio_prompt(AUDIO_PROMPT_OK);
-          ui_face_listening(false);
-          {
-            char vbuf[32];
-            snprintf(vbuf, sizeof(vbuf), "%s %d%%", STR_VOLUME, (int)g_settings.volume);
-            ui_toast(vbuf, 1000);
-          }
-          g_awakeUntil = wnow + kAwakeWindowMs;
-          break;
-        case WAKE_CMD_VOL_DOWN:
-        case WAKE_CMD_VOL_DOWN2:
-          if (!awake) break;
-          uiVolume(-10);
-          audio_prompt(AUDIO_PROMPT_OK);
-          ui_face_listening(false);
-          {
-            char vbuf[32];
-            snprintf(vbuf, sizeof(vbuf), "%s %d%%", STR_VOLUME, (int)g_settings.volume);
-            ui_toast(vbuf, 1000);
-          }
-          g_awakeUntil = wnow + kAwakeWindowMs;
-          break;
-        case WAKE_CMD_BRI_UP:
-        case WAKE_CMD_BRI_UP2:
-          if (!awake) break;
-          ui_brightness_adjust(+10);
-          audio_prompt(AUDIO_PROMPT_OK);
-          ui_face_listening(false);
-          {
-            char bbuf[32];
-            snprintf(bbuf, sizeof(bbuf), "%s %d%%", STR_BRIGHTNESS, ui_brightness());
-            ui_toast(bbuf, 1000);
-          }
-          g_awakeUntil = wnow + kAwakeWindowMs;
-          break;
-        case WAKE_CMD_BRI_DOWN:
-        case WAKE_CMD_BRI_DOWN2:
-          if (!awake) break;
-          ui_brightness_adjust(-10);
-          audio_prompt(AUDIO_PROMPT_OK);
-          ui_face_listening(false);
-          {
-            char bbuf[32];
-            snprintf(bbuf, sizeof(bbuf), "%s %d%%", STR_BRIGHTNESS, ui_brightness());
-            ui_toast(bbuf, 1000);
-          }
-          g_awakeUntil = wnow + kAwakeWindowMs;
-          break;
-        case WAKE_CMD_CALL_FRONT:
-        case WAKE_CMD_CALL_FRONT2:
-        case WAKE_CMD_CALL_FRONT3:
-          if (!awake) break;
-          if (g_sip.isIdle()) {
-            g_awakeUntil = 0;
-            g_awakeActive = false;
-            WakeWord::endCommandWindow();
-            audio_prompt(AUDIO_PROMPT_OK);
-            ui_face_listening(false);
-            g_dialNumber = g_settings.dialNumber;
-            g_dialAt = wnow + 450;   // let the confirmation chime finish first
-          }
-          break;
-        default:
-          break;
-      }
-    }
-  }
+  // Wake word -> assistant
+  if (WakeWord::consume()) assistant_on_wake_word();
+  assistant_loop();
 
   // BOOT (GPIO0, active low): open/close the settings page.
   {
@@ -483,7 +405,8 @@ void loop() {
     if (bootNow && !bootWas && bn - bootAt > 250) {
       bootAt = bn;
       audio_click();
-      if (ui_screen() == UI_SETTINGS || ui_screen() == UI_INFO) ui_settings_back();
+      if (ui_screen_asleep()) { assistant_on_user_wake(); }
+      else if (ui_screen() == UI_SETTINGS || ui_screen() == UI_INFO) ui_settings_back();
       else if (ui_screen() == UI_DIALER) ui_show_face();
       else showSettings();
     }
@@ -492,19 +415,18 @@ void loop() {
 
   uint32_t now = millis();
 
-  // Deferred dial from a voice command (so the confirmation chime is heard).
-  if (g_dialAt && (int32_t)(now - g_dialAt) >= 0) {
-    g_dialAt = 0;
-    uiDial(g_dialNumber.c_str());
-  }
-
-  // Closing the command window: a soft falling note asks for the wake word again.
-  if (g_awakeActive && (int32_t)(now - g_awakeUntil) >= 0) {
-    g_awakeActive = false;
-    WakeWord::endCommandWindow();
-    ui_face_listening(false);       // command window closed: one tone, then back
-    audio_prompt(AUDIO_PROMPT_TIMEOUT);
-    ui_face_set_expr(EX_LISTENING);
+  // Touch while asleep wakes the screen and starts a conversation; touch while
+  // awake just postpones the screen-off.
+  {
+    static uint32_t lastTouchPoll = 0;
+    if (now - lastTouchPoll > 100) {
+      lastTouchPoll = now;
+      uint16_t tx, ty;
+      if (touch_read(tx, ty)) {
+        if (ui_screen_asleep()) assistant_on_user_wake();
+        else assistant_touch_activity();
+      }
+    }
   }
 
   // Wake-word engine health every 60 s: CPU per chunk and counters.
@@ -513,10 +435,9 @@ void loop() {
     if (now - lastWakeStat > 60000) {
       lastWakeStat = now;
       WakeWord::Stats ws = WakeWord::stats();
-      Serial.printf("[WAKE] stage=%d wakes=%lu cmds=%lu wn avg/max %lu/%lu us  mn avg/max %lu/%lu us  %s\n",
-                    (int)ws.stage, (unsigned long)ws.wakes, (unsigned long)ws.commands,
-                    (unsigned long)ws.wnAvgUs, (unsigned long)ws.wnMaxUs, (unsigned long)ws.mnAvgUs, (unsigned long)ws.mnMaxUs,
-                    ws.ready ? "" : ws.error);
+      Serial.printf("[WAKE] assistant=%d listening=%d wakes=%lu wn avg/max %lu/%lu us %s\n",
+                    (int)assistant_state(), (int)ws.listening, (unsigned long)ws.wakes,
+                    (unsigned long)ws.avgUs, (unsigned long)ws.maxUs, ws.ready ? "" : ws.error);
     }
   }
 
@@ -524,7 +445,7 @@ void loop() {
   if (now - g_lastUiTick >= 250) {
     g_lastUiTick = now;
     if (ui_screen() == UI_CALL && g_callConnectedAt) ui_call_timer((now - g_callConnectedAt) / 1000, true);
-    if (ui_screen() == UI_FACE) ui_face_levels(audio_mic_level(), audio_spk_level());
+    if (ui_screen() == UI_FACE && assistant_state() == AS_CALL) ui_face_levels(audio_mic_level(), audio_spk_level());
     // return to the dialer a moment after a call has ended
     if (g_endedAt && g_sip.isIdle() && now - g_endedAt > 2500 && (ui_screen() == UI_CALL || ui_screen() == UI_INCOMING)) {
       g_endedAt = 0;

@@ -2,6 +2,7 @@
 // inside the circle (radius 180 around the centre). Dark background hides the
 // corners that the glass does not show anyway.
 #include "ui.h"
+#include "display.h"
 #include "ui_strings.h"
 #include "config.h"
 #include "face_model.h"
@@ -13,6 +14,7 @@
 
 LV_FONT_DECLARE(font_cn_18);
 LV_FONT_DECLARE(font_cn_24);
+LV_FONT_DECLARE(font_cjk_16);
 
 static UiCallbacks s_cb;
 static UiScreen s_screen = UI_BOOT;
@@ -55,7 +57,8 @@ static FaceModel s_face;
 static FaceRenderer s_faceR;
 static uint16_t *s_faceBuf = NULL;
 static lv_image_dsc_t s_faceDsc;
-static lv_obj_t *scr_face, *face_canvas, *face_clock, *face_batt, *face_batt_fill, *face_batt_pct, *face_hang;
+static lv_obj_t *scr_face, *face_canvas, *face_clock, *face_batt, *face_batt_fill, *face_batt_pct, *face_hang, *face_caption;
+static bool s_asleep = false;
 static lv_timer_t *face_timer = NULL;
 static bool s_faceCall = false;
 static uint32_t s_battAt = 0;
@@ -693,6 +696,18 @@ static void build_face() {
   lv_obj_add_event_cb(face_canvas, face_gaze_event, LV_EVENT_PRESS_LOST, NULL);
 
   face_clock = mk_label(scr_face, "--:--", &lv_font_montserrat_24, COL_DIM, LV_ALIGN_TOP_MID, 0, 12);
+  // assistant transcript: two lines inside the round glass, above the battery pill
+  face_caption = mk_label(scr_face, "", &font_cjk_16, COL_TEXT, LV_ALIGN_BOTTOM_MID, 0, -62);
+  lv_obj_set_width(face_caption, 250);
+  lv_obj_set_style_text_align(face_caption, LV_TEXT_ALIGN_CENTER, 0);
+  lv_label_set_long_mode(face_caption, LV_LABEL_LONG_WRAP);
+  lv_obj_set_style_max_height(face_caption, 52, 0);
+  lv_obj_set_style_bg_color(face_caption, lv_color_hex(0x000000), 0);
+  lv_obj_set_style_bg_opa(face_caption, LV_OPA_60, 0);
+  lv_obj_set_style_pad_hor(face_caption, 8, 0);
+  lv_obj_set_style_pad_ver(face_caption, 3, 0);
+  lv_obj_set_style_radius(face_caption, 10, 0);
+  lv_obj_add_flag(face_caption, LV_OBJ_FLAG_HIDDEN);
   face_batt = lv_obj_create(scr_face);
   lv_obj_set_size(face_batt, 54, 22);
   lv_obj_align(face_batt, LV_ALIGN_BOTTOM_MID, 0, -28);   // bottom centre, inside the round glass
@@ -885,9 +900,44 @@ void ui_settings_back() {
 }
 
 void ui_face_listening(bool on) {
+  if (s_listenRing == on) return;
   s_listenRing = on;
-  Serial.printf("[UI] listening ring %s\n", on ? "on" : "off");
+  Serial.printf("[UI] speaking ring %s\n", on ? "on" : "off");
 }
+
+void ui_face_caption(const char *text) {
+  if (!face_caption) return;
+  if (!text || !*text) { lv_obj_add_flag(face_caption, LV_OBJ_FLAG_HIDDEN); return; }
+  // keep the tail: the newest words matter most on a two-line strip
+  String t = text;
+  const int maxBytes = 96;   // ~32 CJK chars = two lines of 16 at 16 px
+  if ((int)t.length() > maxBytes) {
+    int cut = t.length() - maxBytes;
+    while (cut < (int)t.length() && ((uint8_t)t[cut] & 0xC0) == 0x80) cut++;   // utf-8 boundary
+    t = "…" + t.substring(cut);
+  }
+  lv_label_set_text(face_caption, t.c_str());
+  lv_obj_clear_flag(face_caption, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_screen_sleep(bool sleep) {
+  if (s_asleep == sleep) return;
+  s_asleep = sleep;
+  if (sleep) {
+    ui_face_listening(false);
+    ui_face_caption("");
+    backlight_set(0);
+    display_on(false);
+  } else {
+    display_on(true);
+    lv_obj_invalidate(lv_screen_active());
+    lv_refr_now(NULL);
+    backlight_set(s_brightness);
+  }
+  Serial.printf("[UI] screen %s\n", sleep ? "sleep" : "wake");
+}
+
+bool ui_screen_asleep() { return s_asleep; }
 
 void ui_face_levels(uint8_t mic, uint8_t spk) {
   if (ui_screen() != UI_FACE) return;

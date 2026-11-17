@@ -24,7 +24,10 @@ void ui_show_face();
 void ui_face_set_expr(int exprId);
 void ui_face_call_active(bool active);   // show the hang-up button; tapping the face hangs up
 void ui_face_levels(uint8_t mic, uint8_t spk);   // listening / speaking expressions
-void ui_face_listening(bool on);
+void ui_face_listening(bool on);          // purple breathing ring (now: the assistant is speaking)
+void ui_face_caption(const char *text);   // assistant transcript under the eyes ("" hides it)
+void ui_screen_sleep(bool sleep);         // backlight off / on (face stays loaded)
+bool ui_screen_asleep();
 void ui_settings_back();
 void ui_brightness_adjust(int delta);
 int ui_brightness();   // voice command: step the backlight, clamped 20..100   // info -> menu, menu -> face   // purple breathing ring: wake word heard, waiting for a command

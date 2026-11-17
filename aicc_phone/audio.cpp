@@ -2,6 +2,7 @@
 #include "config.h"
 #include "board_io.h"
 #include "wake_word.h"
+#include "voice_session.h"
 #include "ESP_I2S.h"
 #include <math.h>
 #include <string.h>
@@ -564,7 +565,7 @@ static void audio_task(void *) {
         write_stereo(silence16);
       }
 #if BOARD_V2
-      if (m == AUDIO_CALL) {
+      if (m == AUDIO_CALL || m == AUDIO_VOICE) {
         memset(s_playHist16, 0, PLAY_HIST_16K * sizeof(int16_t));
         memset(s_playHist8, 0, PLAY_HIST_8K * sizeof(int16_t));
         memset(s_micHist8, 0, MIC_HIST_8K * sizeof(int16_t));
@@ -605,7 +606,7 @@ static void audio_task(void *) {
         // still fed: people say "你好小安，呼叫前台" in one breath and the first
         // 300 ms of the command would otherwise be thrown away with the chime.
         // (Waiting for the wake word, the chime's own echo is dropped.)
-        if (read_mic(mic16, ref16) && WakeWord::stage() == WakeWord::STAGE_COMMAND) WakeWord::feed(mic16, FRAME_16K);
+        read_mic(mic16, ref16);   // keep the RX DMA ring fresh; the chime itself is not fed to WakeNet
         if (!more) {
           s_promptSegs = nullptr;   // stop re-entering the finished prompt
           s_promptBusy = false;
@@ -625,17 +626,8 @@ static void audio_task(void *) {
       // Idle = wake-word listening. The TDM clocks are driven by the TX channel,
       // so keep writing silence and feed the raw slot-0 microphone to MultiNet.
       write_stereo(silence16);   // also paces the loop (20 ms)
-      if (read_mic(mic16, ref16)) {
-        WakeWord::feed(mic16, FRAME_16K);
-        // Command-window diagnostics: microphone peak once a second so a silent
-        // capture path is distinguishable from a recogniser miss.
-        if (WakeWord::stage() == WakeWord::STAGE_COMMAND) {
-          static uint32_t lastCw = 0; static uint8_t cwPeak = 0;
-          uint8_t lv = level_of(mic16, FRAME_16K);
-          if (lv > cwPeak) cwPeak = lv;
-          if (millis() - lastCw > 1000) { lastCw = millis(); Serial.printf("[WAKE] window mic peak %u%%\n", cwPeak); cwPeak = 0; }
-        }
-      } else vTaskDelay(pdMS_TO_TICKS(FRAME_MS));
+      if (read_mic(mic16, ref16)) WakeWord::feed(mic16, FRAME_16K);
+      else vTaskDelay(pdMS_TO_TICKS(FRAME_MS));
       continue;
 #else
       vTaskDelay(pdMS_TO_TICKS(20));
@@ -660,7 +652,7 @@ static void audio_task(void *) {
     frameT0 = esp_timer_get_time();
 #endif
 
-    if (m == AUDIO_CALL && s_rtp) {
+    if ((m == AUDIO_CALL && s_rtp) || m == AUDIO_VOICE) {
       // ---- uplink ----
       const int16_t *src = mic16;
       bool aecUsed = false;
@@ -700,33 +692,75 @@ static void audio_task(void *) {
       if (refLevel > wRef) wRef = refLevel;
       wFrames++;
 #endif
-      downsample(src, mic8, dsHist);
-      int32_t g = s_micGain;  // percent
-      bool suppress = !aecUsed && echoHold > 0;
-      for (int i = 0; i < FRAME_8K; i++) {
-        int32_t v = (mic8[i] * g) / 100;
-        if (suppress) v = v / 16;
-        if (s_mute) v = 0;
-        mic8[i] = sat16(v);
+      const int32_t g = s_micGain;  // percent
+      const bool suppress = !aecUsed && echoHold > 0;
+      bool gotFar = false;
+      if (m == AUDIO_VOICE) {
+        // cloud session: 16 kHz straight through (mic gain / mute applied)
+        static int16_t up16[FRAME_16K];
+        for (int i = 0; i < FRAME_16K; i++) {
+          int32_t v = ((int32_t)src[i] * g) / 100;
+          if (suppress) v = v / 16;
+          if (s_mute) v = 0;
+          up16[i] = sat16(v);
+        }
+        s_micLevel = level_of(up16, FRAME_16K);
+        VoiceSession::pushMic(up16, FRAME_16K);
+
+        // ---- downlink: PCM at the session's output rate -> 16 kHz ----
+        const uint32_t rate = VoiceSession::playbackRate();
+        if (rate == 24000) {
+          static int16_t in24[FRAME_16K * 3 / 2];   // 480 samples = 20 ms
+          if (VoiceSession::popPlay(in24, FRAME_16K * 3 / 2) > 0) {
+            // 3 -> 2: keep sample 0, average 1 and 2
+            for (int k = 0; k < FRAME_16K / 2; k++) {
+              spk16[2 * k] = in24[3 * k];
+              spk16[2 * k + 1] = (int16_t)(((int32_t)in24[3 * k + 1] + in24[3 * k + 2]) / 2);
+            }
+            gotFar = true;
+          }
+        } else if (rate == 16000) {
+          if (VoiceSession::popPlay(spk16, FRAME_16K) > 0) gotFar = true;
+        } else if (rate == 8000) {
+          if (VoiceSession::popPlay(spk8, FRAME_8K) > 0) { upsample(spk8, spk16, usPrev); gotFar = true; }
+        } else if (rate == 48000) {
+          static int16_t in48[FRAME_16K * 3];
+          if (VoiceSession::popPlay(in48, FRAME_16K * 3) > 0) {
+            for (int k = 0; k < FRAME_16K; k++) spk16[k] = (int16_t)(((int32_t)in48[3 * k] + in48[3 * k + 1] + in48[3 * k + 2]) / 3);
+            gotFar = true;
+          }
+        }
+        if (gotFar) s_spkLevel = level_of(spk16, FRAME_16K);
+      } else {
+        downsample(src, mic8, dsHist);
+        for (int i = 0; i < FRAME_8K; i++) {
+          int32_t v = (mic8[i] * g) / 100;
+          if (suppress) v = v / 16;
+          if (s_mute) v = 0;
+          mic8[i] = sat16(v);
+        }
+        s_micLevel = level_of(mic8, FRAME_8K);
+        s_rtp->sendFrame(mic8);
+
+        // ---- downlink ----
+        s_rtp->pump();
+        if (s_rtp->popFrame(spk8)) {
+          s_spkLevel = level_of(spk8, FRAME_8K);
+          upsample(spk8, spk16, usPrev);
+          gotFar = true;
+        }
       }
-      s_micLevel = level_of(mic8, FRAME_8K);
 #if BOARD_V2
       if (s_micLevel > wOut) wOut = s_micLevel;
       if (s_micLevel > 5) wNearOut++;
 #endif
-      s_rtp->sendFrame(mic8);
-
-      // ---- downlink ----
-      s_rtp->pump();
-      if (s_rtp->popFrame(spk8)) {
-        s_spkLevel = level_of(spk8, FRAME_8K);
+      if (gotFar) {
 #if BOARD_V2
         if (s_spkLevel > wSpk) wSpk = s_spkLevel;
         if (s_spkLevel > 5) wFarActive++;
 #endif
         if (s_spkLevel > 6) echoHold = 160; else if (echoHold >= FRAME_MS) echoHold -= FRAME_MS; else echoHold = 0;
         if (s_spkLevel > 4) farHold = 300; else if (farHold >= FRAME_MS) farHold -= FRAME_MS; else farHold = 0;
-        upsample(spk8, spk16, usPrev);
       } else {
         s_spkLevel = 0;
         if (echoHold >= FRAME_MS) echoHold -= FRAME_MS; else echoHold = 0;
@@ -766,7 +800,15 @@ static void audio_task(void *) {
       }
       if (now - lastStat > 2000) {
         lastStat = now;
-        if (s_aec.active() && s_aec.procCount) {
+        if (m == AUDIO_VOICE) {
+          VoiceSession::Stats vs = VoiceSession::stats();
+          Serial.printf("[VOICE] aec %lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% res=%u%% | tx=%lu rxAudio=%lu depth=%dms under=%lu drop=%lu heap=%u\n",
+                        (unsigned long)(s_aec.procCount ? s_aec.procUs / s_aec.procCount : 0), (unsigned long)wMaxUs, wLate,
+                        wMic, wOut, wRef, wSpk, wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? resFrames * 100 / wFrames : 0,
+                        (unsigned long)vs.txChunks, (unsigned long)vs.rxAudioBytes, vs.playDepthMs, (unsigned long)vs.playUnderruns,
+                        (unsigned long)vs.playDrops, (unsigned)ESP.getFreeHeap());
+          s_aec.procUs = 0; s_aec.procCount = 0; s_aec.procMaxUs = 0;
+        } else if (s_aec.active() && s_aec.procCount) {
           Serial.printf("[AEC] %lu/%lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% out>5=%u%% res=%u%% micfail=%u wrfail=%u | rtp rx=%lu tx=%lu txfail=%lu gaps=%lu under=%lu drop=%lu depth=%d\n",
                         (unsigned long)(s_aec.procUs / s_aec.procCount), (unsigned long)s_aec.procMaxUs,
                         (unsigned long)wMaxUs, wLate, wMic, wOut, wRef, wSpk,

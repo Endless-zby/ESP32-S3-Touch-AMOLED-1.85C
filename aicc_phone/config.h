@@ -80,21 +80,28 @@
 #define DEF_MIC_PGA      6       // ES7210 MIC1/MIC2 PGA gain code (6 = 18 dB). 30 dB clipped on speaker echo.
 #define DEF_REF_DIG_GAIN 4       // software gain on the reference channel before the AEC (x1..x8)
 #define DEF_RES_SUPPRESS 1       // residual echo suppression after the AEC while the far end is talking
-// ---- 唤醒词 / 命令词（ESP-SR：WakeNet9 唤醒 + 中文 MultiNet7 命令词）--------
+// ---- 唤醒词（ESP-SR WakeNet9，本地）------------------------------------------
 // 模型包在 flash 的 "model" 分区（tools/srmodels/srmodels_cn.bin，由 tools/pack_models.sh 打包）：
 //   wn9_nihaoxiaoan_tts2  唤醒词 "你好小安"（乐鑫免费商用模型，常开）
-//   mn7_cn + fst/commands_cn.txt  命令词（拼音，逗号分隔；只在唤醒后的窗口内识别）
-// 改命令集：改 tools/srmodels/src/fst/commands_cn.txt，运行 tools/pack_models.sh，再 tools/flash.sh --models。
+// 唤醒后的对话、音量/亮度/呼叫前台全部由云端 Qwen Realtime 的 function calling 完成（assistant.cpp）。
 #define WAKE_WORD_ENABLED   1
 #define WAKE_WORD_TEXT      "你好小安"   // WakeNet9 wn9_nihaoxiaoan_tts2 (tools/srmodels/src)
-#define WAKE_MN_TIMEOUT_MS  6000     // MultiNet 自身静音超时（窗口由应用层 kAwakeWindowMs 控制）
-#define WAKE_DET_THRESHOLD  0.20f    // MultiNet 内部检测阈值（真机：呼叫前台 prob 约 0.36，0.35 会漏）
-#define WAKE_MIN_PROB       0.20f    // 命令词置信度下限（只在唤醒窗口内生效）
 #define DEF_WAKE_SENSITIVITY 0       // 0 标准(模型默认阈值) 1 宽松(-0.05) 2 严格(+0.01)
 #define DEF_WAKE_MIC_PGA    10       // 待机监听时 ES7210 PGA code（10 = 30 dB，喇叭安静无削波风险）
 #define AUDIO_CFG_VERSION 4      // bump to reset the audio tuning fields stored in NVS
 #define SIP_LOCAL_PORT   5060
 #define RTP_LOCAL_PORT   20000
+
+// ---- Qwen Realtime voice assistant (device connects to DashScope directly) ----
+#define DEF_AI_HOST          "dashscope.aliyuncs.com"       // or <WorkspaceId>.cn-beijing.maas.aliyuncs.com
+#define DEF_AI_MODEL         "qwen-audio-3.1-realtime-flash"
+#define DEF_AI_VOICE         ""                              // empty = server default (longanqian_v3.1)
+#define DEF_AI_OUT_RATE      24000                           // PCM rate of response.audio.delta
+#define DEF_AI_IDLE_SEC      120                             // no speech from either side -> sleep
+#define DEF_AI_EXTRA         ""                              // hotel-specific facts appended to the prompt
+#define VOICE_TURN_DETECTION "smart_turn_v2"
+#define VOICE_CONNECT_TIMEOUT_MS 15000
+#define VOICE_PREROLL_MS     240
 
 #define AP_SSID_PREFIX "AICC-Phone-"
 #define AP_PASSWORD    "12345678"

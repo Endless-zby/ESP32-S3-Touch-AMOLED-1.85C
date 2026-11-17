@@ -8,6 +8,7 @@ enum AudioMode {
   AUDIO_RINGING,    // local ring tone for an incoming call
   AUDIO_BUSY,       // busy / error tone
   AUDIO_CALL,       // full duplex RTP
+  AUDIO_VOICE,      // full duplex with the cloud voice session (VoiceSession rings)
 };
 
 bool audio_init();

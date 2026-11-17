@@ -69,15 +69,20 @@ tools/monitor.sh        # 115200 串口日志
 4. 按绿色按钮即可呼叫预设号码；通话中可静音、调音量、挂断。
 5. 齿轮按钮 → 查看 IP / 服务器 / 状态，“重新配网”会清除 Wi-Fi 并重启。
 
-## 语音唤醒与命令词
+## 语音助手「小安」（Qwen Realtime 直连）
 
-- 唤醒词 **"你好小安"**：乐鑫 esp-sr 官方 WakeNet9 模型 `wn9_nihaoxiaoan_tts2`（免费商用），常开本地识别。
-- 命令词：乐鑫 MultiNet7 中文模型，只在唤醒后的 8 秒窗口内运行；词表在 `tools/srmodels/src/fst/commands_cn.txt`，
-  id 与 `wake_word.h` 的 `WAKE_CMD_*` 对应。
-- 模型包：`tools/pack_models.sh` 把 `tools/srmodels/src/` 打成 `tools/srmodels/srmodels_cn.bin`（约 3.25 MB），
-  烧录时 `tools/flash.sh --models` 写入 4 MB 的 `model` 分区（见 `aicc_phone/partitions.csv`）。
-- 灵敏度：网页配置页"唤醒灵敏度"三档（标准 / 宽松 / 严格），对应 WakeNet 阈值 默认 / −0.05 / +0.01。
-- 核心自带的 esp-sr 为 2.4.6，只支持 WakeNet9 系列模型（wn9 / wn9l / wn9s），不支持 wn10。
+- **唤醒**：本地 WakeNet9 "你好小安"（`wn9_nihaoxiaoan_tts2`，乐鑫免费商用模型），休眠时常开。命令词模型已不再使用。
+- **对话**：唤醒后播放提示音并与百炼 `qwen-audio-3.1-realtime-flash` 建立 WebSocket 会话（`voice_session.cpp`），
+  `smart_turn_v2` 轮次检测，麦克风经 AEC 后以 16 kHz PCM 上传，回复音频（默认 24 kHz）重采样后播放，可随时打断。
+  AI 说话时屏幕边缘亮紫色呼吸光环，回复文字滚动显示在眼睛下方（全 GB2312 字体 `font_cjk_16.c`）。
+- **工具**（function calling，`assistant.cpp`）：`set_volume`、`set_brightness`、`call_front_desk`（关闭会话后用 SIP 拨前台，
+  通话结束自动恢复对话）、`end_conversation`。
+- **休眠**：双方连续 `aiIdleSec`（默认 120 s）无人说话 → 关闭会话、关屏关功放，只保留 Wi-Fi、SIP 心跳和唤醒词。
+  触摸屏幕、按 BOOT、来电都会亮屏。
+- **配置**（网页"语音助手"卡片）：API Key、模型、音色、接入主机名、回复采样率、休眠秒数、酒店信息（附加到提示词）。
+  API Key 只存在设备 NVS 里；正式部署前建议改为经服务器中转。
+- 模型包：`tools/pack_models.sh` 把 `tools/srmodels/src/` 打成 `tools/srmodels/srmodels_cn.bin`，`tools/flash.sh --models` 写入 `model` 分区。
+- 核心自带的 esp-sr 为 2.4.6，只支持 WakeNet9 系列模型（wn9 / wn9l / wn9s）。
 
 ## SIP 对接说明（aicc / FreeSWITCH）
 
@@ -96,7 +101,10 @@ tools/monitor.sh        # 115200 串口日志
 | `sip.h/.cpp` | 精简 SIP UA：REGISTER/INVITE/ACK/CANCEL/BYE/OPTIONS、digest 认证、重传、来电处理 |
 | `rtp.h/.cpp` | RTP 收发 + 抖动缓冲 + 简单丢包隐藏 |
 | `g711.*` | μ-law / A-law 编解码 |
-| `audio.*` | ES8311/ES7210/I2S 初始化、音频任务（采集→AEC→RTP、RTP→播放、铃声/回铃音、按键音） |
+| `audio.*` | ES8311/ES7210/I2S 初始化、音频任务（采集→AEC→RTP 或云端会话、播放、铃声/回铃音、按键音） |
+| `voice_session.*` | Qwen Realtime WebSocket 客户端：会话配置、音频收发环形缓冲、事件解析、工具结果回传 |
+| `assistant.*` | 助手状态机：休眠 / 唤醒 / 会话 / 通话接管，工具执行，闲置休眠 |
+| `wake_word.*` | 本地唤醒词（WakeNet9） |
 | `libs/ESP_SR_AEC` | esp-sr 回声消除预编译库（Arduino 库形式，build.sh 用 `--library` 引入） |
 | `ui.*` / `ui_strings.h` | LVGL 界面（所有控件都在圆形范围内）；中文字符串集中在 `ui_strings.h` |
 | `font_cn_18.c` / `font_cn_24.c` | 自动生成的中文字体（思源黑体子集 + ASCII + LVGL 图标） |
