@@ -23,6 +23,7 @@ bool s_pendingDial = false;        // call_front_desk accepted: dial after the m
 uint32_t s_pendingDialAt = 0;
 bool s_greetAfterCall = false;
 uint32_t s_lastSpeakingUi = 0;
+uint32_t s_speakStartAt = 0;   // when the current reply started playing
 uint8_t s_stallRetries = 0;    // uplink stall -> session restarts in a row
 uint8_t s_failedRetries = 0;   // connect failures -> immediate retries
 bool s_bargeArmed = false;     // armed only after the VAD has been quiet since the reply started
@@ -343,6 +344,7 @@ void assistant_loop() {
         break;
       }
       const bool speaking = VoiceSession::playbackActive() || audio_spk_level() > 3;
+      if (speaking && now - s_lastSpeakingUi > 600) s_speakStartAt = now;   // new reply (600 ms of silence before it)
       // xiaozhi-style barge-in: the local VAD (on the echo-cancelled signal)
       // heard the guest; stop the reply immediately, then the server takes over.
       // Barge-in is edge-triggered (audio side) and re-armed here: after a reply
@@ -356,7 +358,7 @@ void assistant_loop() {
         } else {
           s_bargeSilentAt = 0;
         }
-      } else if (audio_take_barge() && speaking && now - s_sessionStartAt > 1500) {
+      } else if (audio_take_barge() && speaking && now - s_sessionStartAt > 1500 && now - s_speakStartAt > BARGE_MIN_PLAY_MS) {
         Serial.println("[ASSIST] barge-in (local VAD)");
         VoiceSession::bargeIn();
         s_bargeArmed = false; s_bargeSilentAt = 0;

@@ -88,6 +88,11 @@
 #define WAKE_WORD_TEXT      "你好小安"   // WakeNet9 wn9_nihaoxiaoan_tts2 (tools/srmodels/src)
 #define DEF_WAKE_SENSITIVITY 0       // 0 标准(模型默认阈值) 1 宽松(-0.05) 2 严格(+0.01)
 #define DEF_WAKE_MIC_PGA    10       // 待机监听时 ES7210 PGA code（10 = 30 dB，喇叭安静无削波风险）
+// Local barge-in qualifier (esp_vad on the AEC output while the assistant speaks):
+// speech must last this long with the cancelled signal at least this loud (0..100).
+#define BARGE_MIN_MS     240
+#define BARGE_MIN_LEVEL  18
+#define BARGE_MIN_PLAY_MS 600    // ignore the first part of a reply: AEC not converged yet
 #define AUDIO_CFG_VERSION 5      // bump to reset the audio tuning fields stored in NVS
 #define SIP_LOCAL_PORT   5060
 #define RTP_LOCAL_PORT   20000

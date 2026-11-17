@@ -542,6 +542,8 @@ static void audio_task(void *) {
   uint8_t wSlot[4] = {0, 0, 0, 0}, wMic = 0, wOut = 0, wRef = 0, wSpk = 0;
   uint16_t wFrames = 0, wFarActive = 0, wNearOut = 0;   // frames with speaker active / with AEC output > 5%
   uint16_t wVad = 0;         // times the local VAD reported speech over the AEC output
+  uint16_t bargeRun = 0;     // consecutive loud VAD-speech frames (barge-in qualifier)
+  bool bargeFired = false;   // one barge-in per speech run
   uint32_t farHold = 0;      // ms since the far end was last active (counts down)
   uint32_t wMaxUs = 0;       // longest frame processing time in the window
   uint16_t wLate = 0;        // frames that took longer than 20 ms
@@ -689,11 +691,19 @@ static void audio_task(void *) {
         // Barge-in: the local VAD hears the guest over the echo-cancelled signal
         // and stops the reply without waiting for the server (xiaozhi's flow).
         if (m == AUDIO_VOICE && s_vad.h) {
-          // Rising edge only: after a barge-in the guest keeps talking ("继续讲"),
-          // and a level-triggered flag would cancel the very reply he asked for.
-          const bool wasSpeaking = s_vad.state == VAD_SPEECH;
+          // The VAD alone is not enough: at the onset of a reply the AEC has not
+          // converged yet and 100-300 ms of residual echo is "speech" to it (the
+          // greeting cut itself off after one word). Require the VAD to stay on
+          // for BARGE_MIN_MS *and* the cancelled signal to be clearly louder than
+          // residual echo during that time. One trigger per speech run.
           s_vad.push(clean16, FRAME_16K);
-          if (!wasSpeaking && s_vad.state == VAD_SPEECH && !s_bargeFlag) { s_bargeFlag = true; wVad++; }
+          const uint8_t outLv = level_of(clean16, FRAME_16K);
+          if (s_vad.state == VAD_SPEECH) {
+            if (outLv >= BARGE_MIN_LEVEL) bargeRun++;
+            if (bargeRun >= BARGE_MIN_MS / FRAME_MS && !bargeFired) { bargeFired = true; s_bargeFlag = true; wVad++; }
+          } else {
+            bargeRun = 0; bargeFired = false;
+          }
         }
         // Residual echo suppression. Only the *quiet* tail of a loud far end is
         // attenuated: the previous "output 9.5 dB below the raw mic" test also
