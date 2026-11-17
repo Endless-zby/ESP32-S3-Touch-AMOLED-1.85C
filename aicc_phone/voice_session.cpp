@@ -6,6 +6,7 @@
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/idf_additions.h>
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 
@@ -26,12 +27,16 @@ volatile bool s_sessionReady = false;
 volatile bool s_responseActive = false;
 volatile bool s_retryCreate = false;    // response.create refused while the user was speaking
 volatile bool s_stopReq = false;
+volatile bool s_taskDone = false;
+void reapTask() {
+  if (s_task && s_taskDone) { vTaskDeleteWithCaps(s_task); s_task = nullptr; s_taskDone = false; }
+}
 volatile uint32_t s_lastUser = 0, s_lastAi = 0;
 String s_transcript;                 // current reply text (ws task only)
 Stats s_st = {};
 
 // ---- mic ring: 16 kHz int16, 1 s ----
-const int MIC_CAP = 16000;
+const int MIC_CAP = 16000 * 3;
 int16_t *s_mic = nullptr; int s_micHead = 0, s_micCount = 0;
 // ---- play ring: int16 at outRate, 12 s ----
 int s_playCap = 0;
@@ -190,6 +195,8 @@ void handleMessage(const char *js, size_t len) {
   if (!jsonString(js, "type", type, 64)) return;
 
   if (type == "response.audio.delta") { handleAudioDelta(js); return; }
+  if (type != "response.audio_transcript.delta")
+    Serial.printf("[VOICE] << %s (%u B) int=%u\n", type.c_str(), (unsigned)len, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
   if (type == "response.audio_transcript.delta") {
     String d; if (jsonString(js, "delta", d)) { s_transcript += d; postEvent(Event::TRANSCRIPT, s_transcript); }
@@ -266,10 +273,14 @@ void onWsEvent(WStype_t t, uint8_t *payload, size_t len) {
       if (s_state == VS_CONNECTING) { s_state = VS_ERROR; postEvent(Event::FAILED, "connect failed"); }
       else if (s_state == VS_READY) { s_state = VS_ERROR; postEvent(Event::CLOSED); }
       break;
-    case WStype_TEXT:
+    case WStype_TEXT: {
       s_st.bytesIn += len;
+      const uint32_t h0 = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
       handleMessage((const char *)payload, len);
+      if (len > 8192) Serial.printf("[VOICE] big frame %u B: int %u -> %u largest=%u\n", (unsigned)len, (unsigned)h0,
+                                    (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
       break;
+    }
     case WStype_FRAGMENT_TEXT_START:
       s_fragLen = 0;
       // fallthrough
@@ -314,8 +325,9 @@ void sendMicChunk() {
   if (mbedtls_base64_encode((uint8_t *)b64, B64CAP, &olen, (const uint8_t *)pcm, N * 2) != 0) return;
   int n = snprintf(msg, MSGCAP, "{\"type\":\"input_audio_buffer.append\",\"audio\":\"%.*s\"}", (int)olen, b64);
   if (!s_ws.sendTXT(msg, n)) {
-    static uint32_t lastErr = 0;
-    if (millis() - lastErr > 2000) { lastErr = millis(); Serial.printf("[VOICE] sendTXT failed heap=%u\n", (unsigned)ESP.getFreeHeap()); }
+    Serial.printf("[VOICE] sendTXT failed (write stalled >5 s) int=%u largest=%u -> closing\n",
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+    s_ws.disconnect();   // a half-written frame cannot be recovered
     return;
   }
   s_st.txChunks++;
@@ -326,7 +338,7 @@ void voiceTask(void *) {
   String hdr = "Authorization: Bearer " + s_cfg.apiKey;
   s_ws.setExtraHeaders(hdr.c_str());
   s_ws.setReconnectInterval(3000);
-  s_ws.enableHeartbeat(15000, 5000, 2);
+  s_ws.enableHeartbeat(30000, 20000, 3);   // lenient: long frame reads / blocked writes must not count as a dead link
   s_ws.onEvent(onWsEvent);
   Serial.printf("[VOICE] connecting wss://%s%s heap=%u\n", s_cfg.host.c_str(), url.c_str(), (unsigned)ESP.getFreeHeap());
   s_ws.beginSSL(s_cfg.host.c_str(), 443, url.c_str());   // no CA pinned: TLS encrypts, identity is not verified
@@ -344,6 +356,15 @@ void voiceTask(void *) {
     if (s_sessionReady && s_ws.isConnected()) {
       sendMicChunk();
       sendMicChunk();
+      static uint32_t lastTxLog = 0, minInt = 0xFFFFFFFF;
+      const uint32_t hi = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+      if (hi < minInt) minInt = hi;
+      if (millis() - lastTxLog > 2000) {
+        lastTxLog = millis();
+        Serial.printf("[VOICE] tx=%lu | int now=%u min2s=%u largest=%u | total min=%u\n", (unsigned long)s_st.txChunks,
+                      (unsigned)hi, (unsigned)minInt, (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL), (unsigned)ESP.getMinFreeHeap());
+        minInt = 0xFFFFFFFF;
+      }
     } else if (s_state == VS_CONNECTING && millis() - started > VOICE_CONNECT_TIMEOUT_MS) {
       Serial.println("[VOICE] connect timeout");
       s_state = VS_ERROR;
@@ -362,14 +383,15 @@ void voiceTask(void *) {
   s_responseActive = false;
   if (s_state != VS_ERROR) s_state = VS_OFF;
   Serial.printf("[VOICE] task exit state=%d heap=%u\n", (int)s_state, (unsigned)ESP.getFreeHeap());
-  s_task = nullptr;
-  vTaskDelete(nullptr);
+  s_taskDone = true;
+  for (;;) vTaskDelay(pdMS_TO_TICKS(1000));   // reaped with vTaskDeleteWithCaps() (PSRAM stack)
 }
 
 }  // namespace
 
 // ===========================================================================
 bool VoiceSession::begin(const Config &cfg) {
+  reapTask();
   if (s_task) end();
   if (!s_ringLock) s_ringLock = xSemaphoreCreateMutex();
   if (!s_evq) s_evq = xQueueCreate(16, sizeof(Event *));
@@ -390,10 +412,11 @@ bool VoiceSession::begin(const Config &cfg) {
   s_responseActive = false;
   s_retryCreate = false;
   s_stopReq = false;
+  s_taskDone = false;
   s_lastUser = s_lastAi = millis();
   s_state = VS_CONNECTING;
   // Core 0 next to WiFi; priority between the audio task (12) and loop().
-  if (xTaskCreatePinnedToCore(voiceTask, "voice", 12288, nullptr, 6, &s_task, 0) != pdPASS) {
+  if (xTaskCreatePinnedToCoreWithCaps(voiceTask, "voice", 16384, nullptr, 6, &s_task, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     s_state = VS_ERROR; s_task = nullptr; return false;
   }
   return true;
@@ -402,7 +425,8 @@ bool VoiceSession::begin(const Config &cfg) {
 void VoiceSession::end() {
   if (s_task) {
     s_stopReq = true;
-    for (int i = 0; i < 100 && s_task; i++) vTaskDelay(pdMS_TO_TICKS(10));
+    for (int i = 0; i < 200 && !s_taskDone; i++) vTaskDelay(pdMS_TO_TICKS(10));
+    reapTask();
   }
   s_state = VS_OFF;
   s_sessionReady = false;
@@ -416,6 +440,7 @@ VoiceSession::State VoiceSession::state() { return s_state; }
 bool VoiceSession::connected() { return s_state == VS_READY; }
 
 bool VoiceSession::poll(Event &ev) {
+  reapTask();
   Event *e = nullptr;
   if (!s_evq || xQueueReceive(s_evq, &e, 0) != pdTRUE) return false;
   ev = *e;
