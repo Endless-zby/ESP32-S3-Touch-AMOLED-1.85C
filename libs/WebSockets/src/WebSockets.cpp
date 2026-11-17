@@ -23,6 +23,9 @@
  */
 
 #include "WebSockets.h"
+#if defined(ESP32)
+#include <esp_heap_caps.h>
+#endif
 
 #ifdef ESP8266
 #include <core_esp8266_features.h>
@@ -452,7 +455,13 @@ void WebSockets::handleWebsocketCb(WSclient_t * client) {
 
     if(header->payloadLen > 0) {
         // if text data we need one more
+#if defined(ESP32) && defined(BOARD_HAS_PSRAM)
+        // patched: large frames (audio deltas) go to PSRAM so internal RAM stays for TLS/lwIP
+        payload = (uint8_t *)heap_caps_malloc(header->payloadLen + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if(!payload) payload = (uint8_t *)malloc(header->payloadLen + 1);
+#else
         payload = (uint8_t *)malloc(header->payloadLen + 1);
+#endif
 
         if(!payload) {
             DEBUG_WEBSOCKETS("[WS][%d][handleWebsocket] to less memory to handle payload %d!\n", client->num, header->payloadLen);

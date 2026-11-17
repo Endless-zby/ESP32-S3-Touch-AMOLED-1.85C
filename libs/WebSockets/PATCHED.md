@@ -5,3 +5,5 @@ limit; DashScope Realtime sends `response.audio.delta` frames well above 15 KB.
 Payload buffers are malloc'ed and land in PSRAM on this board.
 tools/build.sh links this copy with `--library`; for the Arduino IDE replace
 ~/Documents/Arduino/libraries/WebSockets with this folder.
+
+Second change: frame payload buffers are allocated from PSRAM (heap_caps_malloc MALLOC_CAP_SPIRAM) on ESP32 builds with PSRAM.

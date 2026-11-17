@@ -4,6 +4,7 @@
 #include <WebSocketsClient.h>
 #include <mbedtls/base64.h>
 #include <esp_heap_caps.h>
+#include <sdkconfig.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/idf_additions.h>
@@ -142,13 +143,22 @@ void ringsReset() {
   xSemaphoreGive(s_ringLock);
 }
 
+// Rings are single-producer / single-consumer (ws task <-> audio task); the
+// mutex is only held for short index updates, never across a whole frame copy.
 void playPush(const int16_t *pcm, int n) {
   xSemaphoreTake(s_ringLock, portMAX_DELAY);
-  for (int i = 0; i < n; i++) {
-    if (s_playCount == s_playCap) { s_playHead = (s_playHead + 1) % s_playCap; s_playCount--; s_st.playDrops++; }
-    s_play[(s_playHead + s_playCount) % s_playCap] = pcm[i];
-    s_playCount++;
+  int head = s_playHead, count = s_playCount;
+  if (count + n > s_playCap) {                      // drop oldest
+    int drop = count + n - s_playCap;
+    head = (head + drop) % s_playCap; count -= drop; s_st.playDrops += drop;
   }
+  int tail = (head + count) % s_playCap;
+  xSemaphoreGive(s_ringLock);
+  int first = min(n, s_playCap - tail);
+  memcpy(&s_play[tail], pcm, first * sizeof(int16_t));
+  if (n > first) memcpy(&s_play[0], pcm + first, (n - first) * sizeof(int16_t));
+  xSemaphoreTake(s_ringLock, portMAX_DELAY);
+  s_playHead = head; s_playCount = count + n;
   xSemaphoreGive(s_ringLock);
 }
 
@@ -314,8 +324,13 @@ void sendMicChunk() {
   if (!pcm) return;
   xSemaphoreTake(s_ringLock, portMAX_DELAY);
   if (s_micCount < N) { xSemaphoreGive(s_ringLock); return; }
-  for (int i = 0; i < N; i++) { pcm[i] = s_mic[s_micHead]; s_micHead = (s_micHead + 1) % MIC_CAP; }
-  s_micCount -= N;
+  int head = s_micHead;
+  xSemaphoreGive(s_ringLock);
+  int first = min(N, MIC_CAP - head);
+  memcpy(pcm, &s_mic[head], first * sizeof(int16_t));
+  if (N > first) memcpy(pcm + first, &s_mic[0], (N - first) * sizeof(int16_t));
+  xSemaphoreTake(s_ringLock, portMAX_DELAY);
+  s_micHead = (head + N) % MIC_CAP; s_micCount -= N;
   xSemaphoreGive(s_ringLock);
   const size_t B64CAP = N * 2 / 3 * 4 + 8, MSGCAP = B64CAP + 64;
   static char *b64 = (char *)heap_caps_malloc(B64CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -334,6 +349,10 @@ void sendMicChunk() {
 }
 
 void voiceTask(void *) {
+  // While the session runs, let malloc() of 2 KB+ come from PSRAM (default is
+  // 4 KB+ internal first). mbedTLS record buffers and the lwIP/WS copies are the
+  // big internal-RAM consumers; audio DMA and WiFi keep their own internal pools.
+  heap_caps_malloc_extmem_enable(2048);
   String url = "/api-ws/v1/realtime?model=" + s_cfg.model;
   String hdr = "Authorization: Bearer " + s_cfg.apiKey;
   s_ws.setExtraHeaders(hdr.c_str());
@@ -376,6 +395,7 @@ void voiceTask(void *) {
     vTaskDelay(pdMS_TO_TICKS(10));
   }
   s_ws.disconnect();
+  heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
   // drain tx queue
   String *js = nullptr;
   while (s_txq && xQueueReceive(s_txq, &js, 0) == pdTRUE) delete js;
@@ -475,11 +495,15 @@ void VoiceSession::flushPlayback() {
 void VoiceSession::pushMic(const int16_t *pcm, int n) {
   if (!s_mic || !s_sessionReady) return;
   xSemaphoreTake(s_ringLock, portMAX_DELAY);
-  for (int i = 0; i < n; i++) {
-    if (s_micCount == MIC_CAP) { s_micHead = (s_micHead + 1) % MIC_CAP; s_micCount--; }
-    s_mic[(s_micHead + s_micCount) % MIC_CAP] = pcm[i];
-    s_micCount++;
-  }
+  int head = s_micHead, count = s_micCount;
+  if (count + n > MIC_CAP) { int drop = count + n - MIC_CAP; head = (head + drop) % MIC_CAP; count -= drop; }
+  int tail = (head + count) % MIC_CAP;
+  xSemaphoreGive(s_ringLock);
+  int first = min(n, MIC_CAP - tail);
+  memcpy(&s_mic[tail], pcm, first * sizeof(int16_t));
+  if (n > first) memcpy(&s_mic[0], pcm + first, (n - first) * sizeof(int16_t));
+  xSemaphoreTake(s_ringLock, portMAX_DELAY);
+  s_micHead = head; s_micCount = count + n;
   xSemaphoreGive(s_ringLock);
 }
 
@@ -502,8 +526,13 @@ int VoiceSession::popPlay(int16_t *out, int n) {
     xSemaphoreGive(s_ringLock);
     return n;
   }
-  for (int i = 0; i < n; i++) { out[i] = s_play[s_playHead]; s_playHead = (s_playHead + 1) % s_playCap; }
-  s_playCount -= n;
+  int head = s_playHead;
+  xSemaphoreGive(s_ringLock);
+  int first = min(n, s_playCap - head);
+  memcpy(out, &s_play[head], first * sizeof(int16_t));
+  if (n > first) memcpy(out + first, &s_play[0], (n - first) * sizeof(int16_t));
+  xSemaphoreTake(s_ringLock, portMAX_DELAY);
+  s_playHead = (head + n) % s_playCap; s_playCount -= n;
   xSemaphoreGive(s_ringLock);
   return n;
 }
