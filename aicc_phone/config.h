@@ -69,7 +69,7 @@
 #define DEF_SIP_PASS     ""
 #define DEF_DISPLAY_NAME "ESP32 Phone"
 #define DEF_SIP_REGISTER 0
-#define DEF_VOLUME       75
+#define DEF_VOLUME       55
 #define DEF_MIC_GAIN     150     // digital mic gain (%) applied after AEC
 #define DEF_AEC_MODE     1       // 0 off, 1 esp-sr FD low cost (xiaozhi default), 2 VoIP high perf, 3 FD high perf
 #define DEF_MIC_SLOT     0       // V2: ES7210 TDM slot used as the voice microphone
