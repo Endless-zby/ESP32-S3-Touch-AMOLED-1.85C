@@ -24,6 +24,7 @@ SemaphoreHandle_t s_ringLock = nullptr;
 
 volatile bool s_sessionReady = false;
 volatile bool s_responseActive = false;
+volatile bool s_retryCreate = false;    // response.create refused while the user was speaking
 volatile bool s_stopReq = false;
 volatile uint32_t s_lastUser = 0, s_lastAi = 0;
 String s_transcript;                 // current reply text (ws task only)
@@ -218,7 +219,12 @@ void handleMessage(const char *js, size_t len) {
     postEvent(Event::USER_SPEECH_START);
     return;
   }
-  if (type == "input_audio_buffer.speech_stopped") { s_lastUser = millis(); postEvent(Event::USER_SPEECH_STOP); return; }
+  if (type == "input_audio_buffer.speech_stopped") {
+    s_lastUser = millis();
+    postEvent(Event::USER_SPEECH_STOP);
+    if (s_retryCreate) { s_retryCreate = false; queueSend("{\"type\":\"response.create\"}"); }
+    return;
+  }
   if (type == "response.created") { s_responseActive = true; s_transcript = ""; return; }
   if (type == "response.done") {
     s_responseActive = false;
@@ -239,6 +245,7 @@ void handleMessage(const char *js, size_t len) {
   if (type == "error") {
     String msg; jsonString(js, "message", msg, 200);
     Serial.printf("[VOICE] server error: %.400s\n", js);
+    if (msg.indexOf("while user is speaking") >= 0) { s_retryCreate = true; return; }
     if (!s_sessionReady) { s_state = VS_ERROR; postEvent(Event::FAILED, msg.length() ? msg : String("server error")); }
     return;
   }
@@ -370,6 +377,7 @@ bool VoiceSession::begin(const Config &cfg) {
   s_transcript = "";
   s_sessionReady = false;
   s_responseActive = false;
+  s_retryCreate = false;
   s_stopReq = false;
   s_lastUser = s_lastAi = millis();
   s_state = VS_CONNECTING;
@@ -412,6 +420,10 @@ void VoiceSession::sendToolResult(const String &callId, const String &outputJson
 }
 
 void VoiceSession::requestResponse(const String &instructions) {
+  // Verified against the live API: response.create on a conversation without a
+  // user message is rejected, so seed a (text) user turn first.
+  queueSend("{\"type\":\"conversation.item.create\",\"item\":{\"type\":\"message\",\"role\":\"user\","
+            "\"content\":[{\"type\":\"input_text\",\"text\":\"（客人刚唤醒了设备）\"}]}}");
   String j = "{\"type\":\"response.create\",\"response\":{\"instructions\":\"" + jsonEscape(instructions) + "\"}}";
   queueSend(j);
 }
