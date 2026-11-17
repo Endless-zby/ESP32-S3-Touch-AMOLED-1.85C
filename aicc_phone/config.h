@@ -77,7 +77,7 @@
 #define DEF_REF_DELAY_MS 40      // software reference delay (tune with the lag= value in the serial log)
 #define DEF_AEC_FILTER   4       // esp-sr AEC filter_length (echo tail ~ n x 16 ms)
 #define DEF_REF_GAIN     14      // ES7210 MIC3 PGA gain code (14 = 37.5 dB; the on-board attenuator is ~-24 dB)
-#define DEF_MIC_PGA      6       // ES7210 MIC1/MIC2 PGA gain code (6 = 18 dB). 30 dB clipped on speaker echo.
+#define DEF_MIC_PGA      10      // ES7210 MIC1/MIC2 PGA gain code (10 = 30 dB, xiaozhi default; watch mic=100 / refclip in the log)
 #define DEF_REF_DIG_GAIN 4       // software gain on the reference channel before the AEC (x1..x8)
 #define DEF_RES_SUPPRESS 0       // off: esp-sr's NLP already handles the residual (xiaozhi adds no extra suppressor)
 // ---- 唤醒词（ESP-SR WakeNet9，本地）------------------------------------------
@@ -88,7 +88,7 @@
 #define WAKE_WORD_TEXT      "你好小安"   // WakeNet9 wn9_nihaoxiaoan_tts2 (tools/srmodels/src)
 #define DEF_WAKE_SENSITIVITY 0       // 0 标准(模型默认阈值) 1 宽松(-0.05) 2 严格(+0.01)
 #define DEF_WAKE_MIC_PGA    10       // 待机监听时 ES7210 PGA code（10 = 30 dB，喇叭安静无削波风险）
-#define AUDIO_CFG_VERSION 5      // bump to reset the audio tuning fields stored in NVS
+#define AUDIO_CFG_VERSION 6      // bump to reset the audio tuning fields stored in NVS
 #define SIP_LOCAL_PORT   5060
 #define RTP_LOCAL_PORT   20000
 
