@@ -135,8 +135,9 @@ void feedCommand(const int16_t *pcm, int samples) {
       if (cmd > 0 && prob >= WAKE_MIN_PROB) post(cmd, prob, phrase);
       s_mn->clean(s_mnData);
     } else if (state == ESP_MN_STATE_TIMEOUT) {
-      // MultiNet's own silence timeout: just restart it; the application's
-      // window timer decides when the stage ends.
+      // MultiNet's own silence timeout (nothing speech-like for WAKE_MN_TIMEOUT_MS):
+      // restart it; the application's window timer decides when the stage ends.
+      Serial.println("[WAKE] MultiNet timeout (no command heard)");
       s_mn->clean(s_mnData);
     }
   }

@@ -600,13 +600,19 @@ static void audio_task(void *) {
       if (s_promptSegs) {
         const bool more = prompt_render(spk16);
         write_stereo(spk16);
+        // Keep the capture path running during the chime so the RX DMA ring
+        // does not fill with stale audio. In the command stage the samples are
+        // still fed: people say "你好小安，呼叫前台" in one breath and the first
+        // 300 ms of the command would otherwise be thrown away with the chime.
+        // (Waiting for the wake word, the chime's own echo is dropped.)
+        if (read_mic(mic16, ref16) && WakeWord::stage() == WakeWord::STAGE_COMMAND) WakeWord::feed(mic16, FRAME_16K);
         if (!more) {
           s_promptSegs = nullptr;   // stop re-entering the finished prompt
           s_promptBusy = false;
           pa_enable(false);
           Serial.println("[AUDIO] prompt done");
         }
-        continue;   // never feed the prompt itself to the wake-word recogniser
+        continue;
       }
       if (clickFrames > 0) {
         tone.fill(spk16, 1200, 0, 1000, 0, 6000);
@@ -619,8 +625,17 @@ static void audio_task(void *) {
       // Idle = wake-word listening. The TDM clocks are driven by the TX channel,
       // so keep writing silence and feed the raw slot-0 microphone to MultiNet.
       write_stereo(silence16);   // also paces the loop (20 ms)
-      if (read_mic(mic16, ref16)) WakeWord::feed(mic16, FRAME_16K);
-      else vTaskDelay(pdMS_TO_TICKS(FRAME_MS));
+      if (read_mic(mic16, ref16)) {
+        WakeWord::feed(mic16, FRAME_16K);
+        // Command-window diagnostics: microphone peak once a second so a silent
+        // capture path is distinguishable from a recogniser miss.
+        if (WakeWord::stage() == WakeWord::STAGE_COMMAND) {
+          static uint32_t lastCw = 0; static uint8_t cwPeak = 0;
+          uint8_t lv = level_of(mic16, FRAME_16K);
+          if (lv > cwPeak) cwPeak = lv;
+          if (millis() - lastCw > 1000) { lastCw = millis(); Serial.printf("[WAKE] window mic peak %u%%\n", cwPeak); cwPeak = 0; }
+        }
+      } else vTaskDelay(pdMS_TO_TICKS(FRAME_MS));
       continue;
 #else
       vTaskDelay(pdMS_TO_TICKS(20));
