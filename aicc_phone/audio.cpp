@@ -543,6 +543,7 @@ static void audio_task(void *) {
   uint16_t wFrames = 0, wFarActive = 0, wNearOut = 0;   // frames with speaker active / with AEC output > 5%
   uint16_t wVad = 0;         // times the local VAD reported speech over the AEC output
   uint16_t bargeRun = 0;     // consecutive loud VAD-speech frames (barge-in qualifier)
+  uint16_t wVadFrames = 0, wVadLoud = 0;   // 20 ms frames the VAD called speech / of those loud enough
   bool bargeFired = false;   // one barge-in per speech run
   uint32_t farHold = 0;      // ms since the far end was last active (counts down)
   uint32_t wMaxUs = 0;       // longest frame processing time in the window
@@ -699,7 +700,8 @@ static void audio_task(void *) {
           s_vad.push(clean16, FRAME_16K);
           const uint8_t outLv = level_of(clean16, FRAME_16K);
           if (s_vad.state == VAD_SPEECH) {
-            if (outLv >= BARGE_MIN_LEVEL) bargeRun++;
+            wVadFrames++;
+            if (outLv >= BARGE_MIN_LEVEL) { bargeRun++; wVadLoud++; }
             if (bargeRun >= BARGE_MIN_MS / FRAME_MS && !bargeFired) { bargeFired = true; s_bargeFlag = true; wVad++; }
           } else {
             bargeRun = 0; bargeFired = false;
@@ -820,10 +822,10 @@ static void audio_task(void *) {
         lastStat = now;
         if (m == AUDIO_VOICE) {
           VoiceSession::Stats vs = VoiceSession::stats();
-          Serial.printf("[VOICE] aec %lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% res=%u%% refclip=%u%% g=%u r=%u vad=%u | tx=%lu rxAudio=%lu depth=%dms under=%lu drop=%lu micdrop=%lu heap=%u\n",
+          Serial.printf("[VOICE] aec %lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% res=%u%% refclip=%u%% g=%u r=%u vad=%u/%u/%u | tx=%lu rxAudio=%lu depth=%dms under=%lu drop=%lu micdrop=%lu heap=%u\n",
                         (unsigned long)(s_aec.procCount ? s_aec.procUs / s_aec.procCount : 0), (unsigned long)wMaxUs, wLate,
                         wMic, wOut, wRef, wSpk, wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? resFrames * 100 / wFrames : 0,
-                        wFrames ? refClip * 100 / wFrames : 0, (unsigned)s_echoGain, (unsigned)s_nearMaxRatio, (unsigned)wVad,
+                        wFrames ? refClip * 100 / wFrames : 0, (unsigned)s_echoGain, (unsigned)s_nearMaxRatio, (unsigned)wVad, (unsigned)wVadLoud, (unsigned)wVadFrames,
                         (unsigned long)vs.txChunks, (unsigned long)vs.rxAudioBytes, vs.playDepthMs, (unsigned long)vs.playUnderruns,
                         (unsigned long)vs.playDrops, (unsigned long)vs.micDrops, (unsigned)ESP.getFreeHeap());
           s_aec.procUs = 0; s_aec.procCount = 0; s_aec.procMaxUs = 0;
@@ -847,7 +849,7 @@ static void audio_task(void *) {
           s_rtp->statsReset();
         }
         memset(wSlot, 0, sizeof(wSlot)); wMic = wOut = wRef = wSpk = 0; wFrames = wFarActive = wNearOut = 0; resFrames = 0; wMaxUs = 0; wLate = 0;
-        micFails = 0; wrFails = 0; refClip = 0; s_nearMaxRatio = 0; wVad = 0;
+        micFails = 0; wrFails = 0; refClip = 0; s_nearMaxRatio = 0; wVad = 0; wVadFrames = 0; wVadLoud = 0;
       }
 #endif
       continue;
