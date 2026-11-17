@@ -92,6 +92,7 @@ bool startSession(const char *greeting) {
   c.toolsJson = kToolsJson;
   ui_face_caption(STR_AI_CONNECTING);
   ui_face_set_expr(EX_CONNECTING);
+  Serial.printf("[ASSIST] starting session, heap=%u min=%u\n", (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap());
   if (!VoiceSession::begin(c)) return false;
   s_sessionStartAt = millis();
   s_lastActivity = millis();
@@ -302,11 +303,8 @@ void assistant_loop() {
 
   switch (s_state) {
     case AS_WAKING:
-      // switch the audio path to the session once the chime has finished
-      if (!audio_prompt_busy() && audio_mode() == AUDIO_IDLE && VoiceSession::state() != VoiceSession::VS_OFF &&
-          VoiceSession::state() != VoiceSession::VS_ERROR) {
-        audio_set_mode(AUDIO_VOICE);
-      }
+      // The audio path (AEC etc.) is switched on in AS_SESSION, i.e. after the
+      // TLS handshake: internal RAM is tight and the two peaks must not overlap.
       if (now - s_stateSince > VOICE_CONNECT_TIMEOUT_MS + 5000) {   // belt and braces
         ui_face_caption(STR_AI_OFFLINE);
         s_failedAt = now;
@@ -315,7 +313,10 @@ void assistant_loop() {
       break;
 
     case AS_SESSION: {
-      if (audio_mode() == AUDIO_IDLE && !audio_prompt_busy()) audio_set_mode(AUDIO_VOICE);
+      if (audio_mode() == AUDIO_IDLE && !audio_prompt_busy()) {
+        Serial.printf("[ASSIST] audio -> voice (heap %u)\n", (unsigned)ESP.getFreeHeap());
+        audio_set_mode(AUDIO_VOICE);
+      }
       const bool speaking = VoiceSession::playbackActive() || audio_spk_level() > 3;
       if (speaking) { s_lastActivity = now; s_lastSpeakingUi = now; }
       setRing(speaking);

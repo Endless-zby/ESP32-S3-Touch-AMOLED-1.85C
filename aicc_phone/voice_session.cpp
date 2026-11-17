@@ -206,7 +206,7 @@ void handleMessage(const char *js, size_t len) {
   if (type == "session.updated") {
     s_sessionReady = true;
     s_state = VS_READY;
-    Serial.printf("[VOICE] session ready (%u bytes): %.300s\n", (unsigned)len, js);
+    Serial.printf("[VOICE] session ready (%u bytes) heap=%u: %.200s\n", (unsigned)len, (unsigned)ESP.getFreeHeap(), js);
     postEvent(Event::CONNECTED);
     if (s_cfg.greeting.length()) requestResponse(s_cfg.greeting);
     return;
@@ -296,17 +296,20 @@ void onWsEvent(WStype_t t, uint8_t *payload, size_t len) {
 void sendMicChunk() {
   // 100 ms of 16 kHz PCM per append
   const int N = 1600;
-  static int16_t pcm[N];
+  static int16_t *pcm = (int16_t *)heap_caps_malloc(N * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!pcm) return;
   xSemaphoreTake(s_ringLock, portMAX_DELAY);
   if (s_micCount < N) { xSemaphoreGive(s_ringLock); return; }
   for (int i = 0; i < N; i++) { pcm[i] = s_mic[s_micHead]; s_micHead = (s_micHead + 1) % MIC_CAP; }
   s_micCount -= N;
   xSemaphoreGive(s_ringLock);
-  static char b64[N * 2 / 3 * 4 + 8];
+  const size_t B64CAP = N * 2 / 3 * 4 + 8, MSGCAP = B64CAP + 64;
+  static char *b64 = (char *)heap_caps_malloc(B64CAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  static char *msg = (char *)heap_caps_malloc(MSGCAP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!b64 || !msg) return;
   size_t olen = 0;
-  if (mbedtls_base64_encode((uint8_t *)b64, sizeof(b64), &olen, (const uint8_t *)pcm, N * 2) != 0) return;
-  static char msg[sizeof(b64) + 64];
-  int n = snprintf(msg, sizeof(msg), "{\"type\":\"input_audio_buffer.append\",\"audio\":\"%.*s\"}", (int)olen, b64);
+  if (mbedtls_base64_encode((uint8_t *)b64, B64CAP, &olen, (const uint8_t *)pcm, N * 2) != 0) return;
+  int n = snprintf(msg, MSGCAP, "{\"type\":\"input_audio_buffer.append\",\"audio\":\"%.*s\"}", (int)olen, b64);
   s_ws.sendTXT(msg, n);
   s_st.txChunks++;
 }
