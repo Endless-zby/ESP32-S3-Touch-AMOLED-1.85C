@@ -27,7 +27,6 @@ SemaphoreHandle_t s_ringLock = nullptr;
 volatile bool s_sessionReady = false;
 volatile bool s_responseActive = false;
 volatile bool s_retryCreate = false;    // response.create refused while the user was speaking
-volatile bool s_toolCreatePending = false;  // a tool result is in; create its follow-up response once no response is active
 volatile bool s_stopReq = false;
 volatile bool s_taskDone = false;
 void reapTask() {
@@ -446,13 +445,6 @@ void voiceTask(void *) {
       if (js->length() < 80) Serial.printf("[VOICE] >> %s\n", js->c_str());
       delete js;
     }
-    // Deferred tool-result follow-up: fire response.create only when the previous
-    // response has finished (s_responseActive false), so it is never rejected.
-    if (s_toolCreatePending && !s_responseActive && s_sessionReady && s_ws.isConnected()) {
-      s_toolCreatePending = false;
-      s_ws.sendTXT("{\"type\":\"response.create\"}");
-      Serial.println("[VOICE] >> {\"type\":\"response.create\"} (after tool result)");
-    }
     if (s_sessionReady && s_ws.isConnected()) {
       sendMicChunk();
       sendMicChunk();
@@ -518,7 +510,6 @@ bool VoiceSession::begin(const Config &cfg) {
   s_sessionReady = false;
   s_responseActive = false;
   s_retryCreate = false;
-  s_toolCreatePending = false;
   s_stopReq = false;
   s_taskDone = false;
   s_lastUser = millis();
@@ -562,11 +553,7 @@ void VoiceSession::sendToolResult(const String &callId, const String &outputJson
   String j = "{\"type\":\"conversation.item.create\",\"item\":{\"type\":\"function_call_output\",\"call_id\":\"" +
              jsonEscape(callId) + "\",\"output\":\"" + jsonEscape(outputJson) + "\"}}";
   queueSend(j);
-  // Do NOT send response.create here: the response that made the tool call may
-  // still be streaming its own response.done, and the server rejects a second
-  // response.create while one is in progress. The ws task sends it as soon as no
-  // response is active (immediately, or on the next response.done).
-  s_toolCreatePending = true;
+  queueSend("{\"type\":\"response.create\"}");
 }
 
 void VoiceSession::requestResponse(const String &instructions) {
