@@ -39,6 +39,8 @@ const char *kToolsJson =
        "\"delta\":{\"type\":\"integer\",\"description\":\"相对调整量，客人只说亮点/暗点而没给数值时用它，调亮用正数调暗用负数，一般 ±20。与 level 二选一\"}}}},"
    "{\"type\":\"function\",\"name\":\"call_front_desk\",\"description\":\"用这台话机拨打酒店前台，接听的是酒店客服 AI，负责酒店自己的业务与政策。遇到下列情况就调用：客人问酒店的早餐时间/退房时间/房型房价/账单发票等政策；客人要送东西（毛巾、水、牙刷等）、要维修（空调、灯、马桶等）、要投诉、要叫车、要打扫、要加床；客人明确说要打给前台/打电话给前台/接前台/拨前台/帮我打前台/给前台打电话/找前台/找人工/转真人/叫服务员——只要客人表达了联系前台的意思就立即调用，不要只口头答应。普通知识、闲聊、算数、翻译等绝对不要调用，由你自己回答。调用前先用一句话告诉客人“马上为您接通前台”，然后停止说话。\","
      "\"parameters\":{\"type\":\"object\",\"properties\":{\"reason\":{\"type\":\"string\",\"description\":\"客人的诉求，一句话概括，例如“客人要两瓶水”\"}}}},"
+   "{\"type\":\"function\",\"name\":\"get_time\",\"description\":\"查询这台话机的当前日期和时间（北京时间，年月日时分秒和星期）。客人问现在几点、今天几号、今天星期几、现在是什么时候等与当前时间日期有关的问题时调用，拿到结果后用口语把时间说给客人。不要自己编时间。\","
+     "\"parameters\":{\"type\":\"object\",\"properties\":{}}},"
    "{\"type\":\"function\",\"name\":\"end_conversation\",\"description\":\"结束本次对话并让设备休眠。客人明确表示不再需要帮助时调用，例子：再见、拜拜、没事了、就这样、不用了、谢谢不用了、可以了、好了没别的事了、挂了吧。调用前先简短道个别（如“好的，有需要再叫我”）再调用。\","
      "\"parameters\":{\"type\":\"object\",\"properties\":{}}}"
   "]";
@@ -53,7 +55,7 @@ String buildInstructions() {
   s += "1）口语化、简短，一般一到三句话；不要分点列举、不要念稿子，客人追问时再展开讲。";
   s += "2）知识类、闲聊类的问题由你自己直接回答，不要推给前台，也不要说“请联系前台”。";
   s += "3）确实不知道或不确定的，坦率说不太清楚，不要编造年份、数据、人名。";
-  s += "4）你能直接操作这台话机：调音量用 set_volume，调屏幕亮度用 set_brightness，找前台用 call_front_desk，结束对话用 end_conversation。"
+  s += "4）你能直接操作这台话机：调音量用 set_volume，调屏幕亮度用 set_brightness，查当前时间日期用 get_time，找前台用 call_front_desk，结束对话用 end_conversation。"
        "只要客人的意思落在某个工具上，第一时间调用那个工具，再用一句话确认结果（如“音量调到60了”）。"
        "绝对不要只嘴上答应“好的”“已为您调整”却不调用工具——没调用工具就等于什么都没做。拿不准数值时按工具说明的默认值调。";
   s += "5）涉及酒店自己的服务与政策，或客人直接要求联系前台时，调用 call_front_desk：早餐与退房时间、房型房价、账单发票、送物、维修、投诉、叫车、"
@@ -176,6 +178,21 @@ void runTool(const VoiceSession::Event &ev) {
     s_pendingDialAt = millis() + 6000;   // dial after the model's closing sentence, or at the latest in 6 s
     ui_face_caption(STR_AI_CALLING);
     out = "{\"ok\":true,\"status\":\"dialing\"}";
+  } else if (ev.toolName == "get_time") {
+    time_t now = time(nullptr);
+    struct tm ti;
+    localtime_r(&now, &ti);
+    if (now < 1700000000) {
+      // NTP has not synced yet (clock still at boot epoch)
+      out = "{\"ok\":false,\"error\":\"time not synced\"}";
+    } else {
+      static const char *wd[] = {"星期日","星期一","星期二","星期三","星期四","星期五","星期六"};
+      char b[160];
+      snprintf(b, sizeof(b),
+               "{\"ok\":true,\"datetime\":\"%04d-%02d-%02d %02d:%02d:%02d\",\"weekday\":\"%s\",\"timezone\":\"北京时间\"}",
+               ti.tm_year + 1900, ti.tm_mon + 1, ti.tm_mday, ti.tm_hour, ti.tm_min, ti.tm_sec, wd[ti.tm_wday]);
+      out = b;
+    }
   } else if (ev.toolName == "end_conversation") {
     out = "{\"ok\":true}";
     // Sleep once the goodbye has actually played (AS_SESSION handles it), so a
