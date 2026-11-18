@@ -106,7 +106,7 @@ bool startSession(const char *greeting) {
 }
 
 void wakeUp(bool chime, const char *greeting) {
-  WakeWord::setListening(true);       // keep WakeNet on so "你好小安" can barge in mid-reply
+  WakeWord::setListening(false);      // the session owns the microphone now
   ui_screen_sleep(false);
   ui_show_face();
   ui_face_set_expr(EX_ATTENTIVE);
@@ -213,19 +213,8 @@ void assistant_begin(const AssistantHooks &hooks) {
 AssistantState assistant_state() { return s_state; }
 
 void assistant_on_wake_word() {
-  if (s_state == AS_CALL) return;     // during a SIP call: ignore (also not fed)
-  if (s_state == AS_SESSION) {
-    // Mid-session: "你好小安" interrupts the reply, but only while the AI is
-    // actually speaking; if it is already listening there is nothing to stop.
-    if (VoiceSession::playbackActive() || audio_spk_level() > 3) {
-      Serial.println("[ASSIST] wake-word barge-in");
-      VoiceSession::bargeIn();
-      s_lastActivity = millis();
-      ui_face_set_expr(EX_USER_SPEAKING);
-    }
-    return;
-  }
-  if (s_state == AS_WAKING) return;   // connecting
+  if (s_state == AS_CALL) return;
+  if (s_state == AS_SESSION || s_state == AS_WAKING) return;   // already up
   s_failedRetries = 0;
   wakeUp(true, "请用一句话向客人问好，并问他想聊点什么或需要什么帮忙，不超过15个字。");
 }
