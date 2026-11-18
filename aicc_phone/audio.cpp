@@ -728,6 +728,16 @@ static void audio_task(void *) {
         s_micLevel = level_of(up16, FRAME_16K);
         VoiceSession::pushMic(up16, FRAME_16K);
 
+#if WAKE_WORD_ENABLED
+        // Wake-word barge-in while the assistant is speaking. WakeNet runs on the
+        // RAW mic, not the AEC output: double-talk suppression gates the AEC
+        // output to ~0, but the raw mic still carries "你好小安" under the echo,
+        // and WakeNet is trained to find the phrase in noisy/echoey audio.
+        // Fed only while playback is active -> only interrupts during AI speech,
+        // and never during a SIP call (that path is AUDIO_CALL, handled below).
+        if (VoiceSession::playbackActive()) WakeWord::feed(mic16, FRAME_16K);
+#endif
+
         // ---- downlink: PCM at the session's output rate -> 16 kHz ----
         const uint32_t rate = VoiceSession::playbackRate();
         if (rate == 24000) {

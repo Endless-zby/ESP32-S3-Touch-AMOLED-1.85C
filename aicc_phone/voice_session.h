@@ -45,6 +45,9 @@ void sendToolResult(const String &callId, const String &outputJson);
 void requestResponse(const String &instructions);
 // Drop everything buffered for playback (barge-in).
 void flushPlayback();
+// Wake-word barge-in: stop the current reply now (drop buffered + in-flight
+// audio and cancel the response). Called when "你好小安" is heard mid-reply.
+void bargeIn();
 
 // ---- audio-task side ----
 void pushMic(const int16_t *pcm16k, int samples);          // after AEC

@@ -561,6 +561,12 @@ void VoiceSession::requestResponse(const String &instructions) {
   queueSend(j);
 }
 
+void VoiceSession::bargeIn() {
+  s_dropAudio = true;                 // drop any reply frames still in flight
+  flushPlayback();                    // and everything already buffered
+  if (s_responseActive) queueSend("{\"type\":\"response.cancel\"}");
+}
+
 void VoiceSession::flushPlayback() {
   if (!s_ringLock) return;
   xSemaphoreTake(s_ringLock, portMAX_DELAY);
