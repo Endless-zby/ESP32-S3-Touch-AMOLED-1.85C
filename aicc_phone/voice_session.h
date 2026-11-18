@@ -31,6 +31,7 @@ struct Config {
   String greeting;      // instructions for the opening line (empty = no greeting)
   uint32_t outRate = 24000;   // expected PCM rate of response.audio.delta
   String toolsJson;     // JSON array of tool definitions
+  bool enableSearch = false;  // 联网搜索: session.update enable_search
 };
 
 bool begin(const Config &cfg);   // connect + configure the session (async)

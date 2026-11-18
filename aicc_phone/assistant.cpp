@@ -95,6 +95,7 @@ bool startSession(const char *greeting) {
   c.greeting = greeting ? greeting : "";
   c.outRate = g_settings.aiOutRate;
   c.toolsJson = kToolsJson;
+  c.enableSearch = g_settings.aiSearch;
   ui_face_caption(STR_AI_CONNECTING);
   ui_face_set_expr(EX_CONNECTING);
   Serial.printf("[ASSIST] starting session, heap=%u min=%u\n", (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap());

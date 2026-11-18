@@ -99,6 +99,7 @@
 #define DEF_AI_OUT_RATE      24000                           // PCM rate of response.audio.delta
 #define DEF_AI_IDLE_SEC      120                             // no speech from either side -> sleep
 #define DEF_AI_EXTRA         ""                              // hotel-specific facts appended to the prompt
+#define DEF_AI_SEARCH        true                            // 联网搜索: let the model search the web when needed (session.update enable_search)
 #define VOICE_TURN_DETECTION "server_vad"       // smart_turn_v2 silently drops fragments as "turn_invalid"; server_vad answers every utterance
 #define VOICE_CONNECT_TIMEOUT_MS 15000
 #define VOICE_PREROLL_MS     240

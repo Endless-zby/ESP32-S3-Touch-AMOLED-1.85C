@@ -69,6 +69,7 @@ button.sec{background:#3a4152}button.warn{background:#b23b3b}
 <div class="row"><div><label>模型</label><input id="aimodel"></div><div><label>音色（留空=默认）</label><input id="aivoice" placeholder="longanqian_v3.1"></div></div>
 <label>接入地址（主机名）</label><input id="aihost" placeholder="dashscope.aliyuncs.com 或 <WorkspaceId>.cn-beijing.maas.aliyuncs.com">
 <div class="row"><div><label>回复音频采样率</label><select id="airate"><option value="24000">24000</option><option value="16000">16000</option><option value="48000">48000</option><option value="8000">8000</option></select></div><div><label>无人说话多久休眠 (秒)</label><input id="aiidle" type="number" min="20" max="3600"></div></div>
+<label><input id="aisearch" type="checkbox" style="width:auto;margin-right:6px"> 联网搜索（让小安在需要时联网查询天气、资讯等，默认开启）</label>
 <label>本机附加信息（附加到提示词，例如酒店名、Wi-Fi 名称；酒店政策的正式回答请交给前台客服 AI）</label><input id="aiextra" placeholder="军阅国际酒店，Wi-Fi: Junyue-Guest / 密码 88888888">
 <button onclick="saveSip()">保存并重启</button>
 </div>
@@ -107,6 +108,7 @@ function poll(n){
 function load(){
   fetch('/config').then(r=>r.json()).then(c=>{
     ['sserver','sport','dial','suser','spass','dname','vol','mic','aec','mslot','rslot','rdelay','afilt','rgain','rdig','mpga','rsup','wsens','aikey','aimodel','aivoice','aihost','airate','aiidle','aiextra'].forEach(k=>$(k).value=c[k]);
+    $('aisearch').checked=!!c.aisearch;
     $('sreg').value=c.sreg?'1':'0';
     $('info').textContent='固件 '+c.fw+' | 热点 '+c.ap+' | 当前 Wi-Fi: '+(c.wifi||'未配置')+' | IP: '+(c.ip||'-');
   });
@@ -114,6 +116,7 @@ function load(){
 function saveSip(){
   var b=new URLSearchParams();
   ['sserver','sport','dial','suser','spass','dname','sreg','vol','mic','aec','mslot','rslot','rdelay','afilt','rgain','rdig','mpga','rsup','wsens','aikey','aimodel','aivoice','aihost','airate','aiidle','aiextra'].forEach(k=>b.append(k,$(k).value));
+  b.append('aisearch',$('aisearch').checked?'1':'0');
   fetch('/sip',{method:'POST',body:b}).then(r=>r.text()).then(t=>alert(t));
 }
 function resetWifi(){if(confirm('确定清除 Wi-Fi 配置并重启？'))fetch('/reset',{method:'POST'}).then(()=>alert('已清除，设备重启后会重新开启热点'))}
@@ -236,6 +239,7 @@ static void handleConfig() {
   out += "\"aihost\":\"" + jsonEscape(s.aiHost) + "\",";
   out += "\"airate\":" + String(s.aiOutRate) + ",";
   out += "\"aiidle\":" + String(s.aiIdleSec) + ",";
+  out += "\"aisearch\":" + String(s.aiSearch ? 1 : 0) + ",";
   out += "\"aiextra\":\"" + jsonEscape(s.aiExtra) + "\",";
   out += "\"fw\":\"" FW_VERSION "\",";
   out += "\"ap\":\"" + jsonEscape(s_apSsid) + "\",";
@@ -272,6 +276,7 @@ static void handleSip() {
   if (s_server.hasArg("airate")) s.aiOutRate = constrain(s_server.arg("airate").toInt(), 8000, 48000);
   if (s_server.hasArg("aiidle")) s.aiIdleSec = constrain(s_server.arg("aiidle").toInt(), 20, 3600);
   if (s_server.hasArg("aiextra")) s.aiExtra = s_server.arg("aiextra");
+  if (s_server.hasArg("aisearch")) s.aiSearch = (s_server.arg("aisearch") == "1" || s_server.arg("aisearch") == "true");
   if (s_server.hasArg("aec")) s.aecMode = constrain(s_server.arg("aec").toInt(), 0, 3);
   s.sipServer.trim(); s.dialNumber.trim(); s.sipUser.trim();
   if (s.sipPort == 0) s.sipPort = DEF_SIP_PORT;

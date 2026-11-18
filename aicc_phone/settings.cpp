@@ -37,6 +37,7 @@ void Settings::load() {
   aiExtra = p.getString("aiextra", DEF_AI_EXTRA);
   aiOutRate = p.getUInt("airate", DEF_AI_OUT_RATE);
   aiIdleSec = p.getUShort("aiidle", DEF_AI_IDLE_SEC);
+  aiSearch = p.getBool("aisearch", DEF_AI_SEARCH);
   if (aiHost.length() == 0) aiHost = DEF_AI_HOST;
   if (aiModel.length() == 0) aiModel = DEF_AI_MODEL;
   if (aiOutRate < 8000 || aiOutRate > 48000) aiOutRate = DEF_AI_OUT_RATE;
@@ -95,6 +96,7 @@ void Settings::save() {
   p.putString("aiextra", aiExtra);
   p.putUInt("airate", aiOutRate);
   p.putUShort("aiidle", aiIdleSec);
+  p.putBool("aisearch", aiSearch);
   p.putUChar("cfgv", AUDIO_CFG_VERSION);
   p.end();
 }

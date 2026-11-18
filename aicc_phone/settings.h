@@ -31,6 +31,7 @@ struct Settings {
   String aiExtra;      // extra prompt facts (hotel name, room, wifi ...)
   uint32_t aiOutRate;
   uint16_t aiIdleSec;  // sleep after this many seconds of silence
+  bool aiSearch;       // 联网搜索: enable the model's web search
 
   void load();
   void save();

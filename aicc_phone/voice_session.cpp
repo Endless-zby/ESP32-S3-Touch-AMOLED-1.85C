@@ -183,6 +183,10 @@ String sessionUpdateJson() {
   j += "\"input_audio_format\":\"pcm16\",\"output_audio_format\":\"pcm16\",";
   j += "\"turn_detection\":{\"type\":\"" VOICE_TURN_DETECTION "\"},";
   if (s_cfg.toolsJson.length()) j += "\"tools\":" + s_cfg.toolsJson + ",\"tool_choice\":\"auto\",";
+  // 联网搜索: the model decides per turn whether to search; enable_source adds
+  // citation metadata to the result. Works alongside function calling on
+  // qwen-audio-3.1-realtime-flash.
+  if (s_cfg.enableSearch) j += "\"enable_search\":true,\"search_options\":{\"enable_source\":true},";
   if (j.endsWith(",")) j.remove(j.length() - 1);
   j += "}}";
   return j;
