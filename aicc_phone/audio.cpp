@@ -812,8 +812,14 @@ static void audio_task(void *) {
         lastStat = now;
         if (m == AUDIO_VOICE) {
           VoiceSession::Stats vs = VoiceSession::stats();
-          Serial.printf("[VOICE] aec %lu us frame max %lu us late=%u | mic=%u out=%u ref=%u spk=%u far=%u%% res=%u%% refclip=%u%% g=%u r=%u vad=%u | tx=%lu rxAudio=%lu depth=%dms under=%lu drop=%lu micdrop=%lu heap=%u\n",
+          // slots[0..3] are the four raw ES7210 TDM slot peaks BEFORE any AEC/
+          // gain: slot order on this board is MIC1, MIC3(ref loopback), MIC2,
+          // MIC4. slot[micSlot] is the physical voice mic; if it stays near 0
+          // while you talk during playback, the problem is capture/wiring, not
+          // echo suppression. mic= is the post-gain uplink level.
+          Serial.printf("[VOICE] aec %lu us frame max %lu us late=%u | slots=[%u %u %u %u] micSlot=%u | mic=%u out=%u ref=%u spk=%u far=%u%% res=%u%% refclip=%u%% g=%u r=%u vad=%u | tx=%lu rxAudio=%lu depth=%dms under=%lu drop=%lu micdrop=%lu heap=%u\n",
                         (unsigned long)(s_aec.procCount ? s_aec.procUs / s_aec.procCount : 0), (unsigned long)wMaxUs, wLate,
+                        wSlot[0], wSlot[1], wSlot[2], wSlot[3], s_micSlot,
                         wMic, wOut, wRef, wSpk, wFrames ? wFarActive * 100 / wFrames : 0, wFrames ? resFrames * 100 / wFrames : 0,
                         wFrames ? refClip * 100 / wFrames : 0, (unsigned)s_echoGain, (unsigned)s_nearMaxRatio, (unsigned)wVadFrames,
                         (unsigned long)vs.txChunks, (unsigned long)vs.rxAudioBytes, vs.playDepthMs, (unsigned long)vs.playUnderruns,
