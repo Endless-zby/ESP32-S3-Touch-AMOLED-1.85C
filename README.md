@@ -1,136 +1,130 @@
-# AICC Phone — ESP32-S3-Touch-LCD-1.85C SIP 话机固件
+# 小安 · 酒店客房智能语音话机
 
-把 Waveshare **ESP32-S3-Touch-LCD-1.85C（V2，圆形 360×360 触摸屏）** 做成一台独立的 SIP 电话，
-一键呼叫 [aicc（ai-native-callcenter）](https://github.com/rasonyang/ai-native-callcenter) 的 AI 客服。
-基于 Arduino 框架（esp32 core 3.3.x）+ LVGL 9.3，SIP/RTP 协议栈为项目自带的精简实现，G.711（PCMU/PCMA）语音。
+> 基于 **Waveshare ESP32-S3-Touch-LCD-1.85C**（圆形 360×360 触摸屏）的一体化客房终端：
+> 一句「你好小安」唤醒 AI 语音助手，也能一键 SIP 呼叫酒店前台。
+
+<p align="center">
+  <img src="design/settings-preview.png" width="48%" alt="圆屏设置主页">
+  <img src="design/info-preview.png" width="48%" alt="系统信息页">
+</p>
+
+一块放在客房床头的圆形小话机，对客人只有两种交互：**对它说话**，或**拿起来打给前台**。
+设备端用 Arduino 框架（esp32 core 3.3.x）+ LVGL 9.3 编写，自带精简 SIP/RTP 协议栈与本地唤醒词识别，
+语音对话直连阿里云百炼 **Qwen-Audio Realtime** 大模型，中间无需任何中转服务器。
+
+---
+
+## ✨ 核心功能
+
+### 🎙️ AI 语音助手「小安」
+
+- **本地唤醒**：ESP-SR WakeNet9 常驻识别唤醒词 **「你好小安」**，离线、低延迟，不联网也能听。
+- **直连大模型**：唤醒后通过 WebSocket 直连 `qwen-audio-3.1-realtime-flash`，实时语音进、实时语音出，
+  可以像朋友一样连续聊天——常识、历史、翻译、算数、讲故事都行。
+- **联网搜索**：内置 `enable_search`（默认开、网页可关），需要时小安会自动联网查天气、资讯等实时信息。
+- **设备控制（Function Calling）**：动嘴就能操作这台话机，模型按需调用下列工具：
+
+  | 工具 | 作用 | 说一句 |
+  |------|------|--------|
+  | `set_volume` | 调喇叭音量 | 「声音大一点」「音量调到 60」 |
+  | `set_brightness` | 调屏幕亮度 | 「太亮了」「屏幕调暗点」 |
+  | `get_time` | 查当前日期时间 | 「现在几点」「今天星期几」 |
+  | `call_front_desk` | 拨打酒店前台 | 「帮我打给前台」「要两瓶水」 |
+  | `end_conversation` | 结束对话、休眠 | 「没事了」「再见」 |
+
+- **自动休眠**：两分钟无人说话自动关屏休眠，仅保留唤醒功能；触摸或说唤醒词即可再次唤起。
+
+### ☎️ SIP 话机
+
+- **一键呼叫前台**：`call_front_desk` 或拨号盘绿色按钮，直接 INVITE 到 FreeSWITCH 的前台分机（默认 `8888`）。
+- **完整通话**：呼出 / 来电接听 / 挂断 / 静音 / 音量调节，圆屏显示通话计时与收发音量电平。
+- **两种接入**：直连 5080 外部口（免注册）或注册 5060（digest 认证）二选一；自动通过 OPTIONS 的
+  `received/rport` 学习公网地址以穿越 NAT；RTP 对称收发，G.711（PCMU/PCMA）语音。
+- **通话优先**：拨打前台到挂断期间，语音助手自动让出麦克风；挂断后自动恢复会话。
+
+### 📶 开箱配网
+
+首次开机自动开启热点 `AICC-Phone-XXXX`（密码 `12345678`），手机连上后浏览器自动弹出配网页
+（或手动打开 `http://192.168.4.1`）。页面列出附近 2.4G Wi-Fi，选一个输入密码即可。
+配网成功后，同一页面在局域网内通过 `http://<设备IP>/` 打开，可配置 SIP、音量、麦克风、
+语音助手 API Key、模型、联网搜索开关等全部参数。
+
+---
+
+## 🧩 硬件
+
+| 部件 | 型号 | 说明 |
+|------|------|------|
+| 主控 | ESP32-S3（8MB PSRAM / 16MB Flash） | 双核 240MHz |
+| 屏幕 | ST77916 圆形 360×360，QSPI | CST816 电容触摸 |
+| 音频 DAC | ES8311 | + NS4150B 功放（PA 控制 GPIO15） |
+| 音频 ADC | ES7210，4 通道 TDM | MIC1 人声 / MIC3 回采参考（接 ES8311 线路输出） |
+| 扩展 IO | TCA9554 | 触摸复位、LCD 复位 |
+
+<p align="center">
+  <img src="reference/schematic/codec_block.png" width="48%" alt="音频编解码原理图">
+  <img src="reference/schematic/aec_block.png" width="48%" alt="回声参考回路原理图">
+</p>
+
+**回声消除**：使用 esp32 core 自带 esp-sr 的 AEC（`esp_aec.h`），默认参数与 xiaozhi-esp32 在本板上一致
+（全双工低功耗模式 + 最强 NLP）。板上 ES7210 的第 3 路麦克风在硬件上接 ES8311 线路输出（原理图 "AEC" 区块），
+作为回声参考；配置成 4 通道 TDM 后，I2S 帧里的 4 个槽位依次是 MIC1 / MIC3 / MIC2 / MIC4，槽位 1 即参考。
+> ⚠️ 本板喇叭与麦克风距离极近，双讲（AI 说话时人同时说话）场景下近端人声会被 NLP 一并抑制，
+> 这是该硬件的物理限制（小智官方亦未在 1.85C 上开启语音打断）。日常一问一答不受影响。
+
+---
+
+## 🗂️ 工程结构
 
 ```
-aicc_phone/      Arduino 工程（打开 aicc_phone.ino 即可）
-tools/           编译 / 烧录 / 串口 / 字体生成脚本
-reference/       Waveshare 官方驱动示例（只读参考）
-build/           编译产物（tools/build.sh 生成）
+aicc_phone/      Arduino 工程（打开 aicc_phone.ino 即可编译）
+  ├─ assistant.*       语音助手状态机、Function Calling 工具
+  ├─ voice_session.*   Qwen Realtime WebSocket 会话
+  ├─ wake_word.*       WakeNet9「你好小安」本地唤醒
+  ├─ audio.*           ES8311/ES7210 采集播放、AEC、重采样
+  ├─ sip.* / rtp.*     精简 SIP/RTP 协议栈，G.711
+  ├─ ui.* / face_*     LVGL 圆屏界面、表情动画
+  └─ web_portal.*      配网与设置网页
+tools/           编译 / 烧录 / 串口 / 字体 / 模型打包脚本
+libs/WebSockets/ 内置的 arduinoWebSockets（放宽帧上限、PSRAM 分配）
+design/          圆屏 UI 交互原型（HTML + 预览图）
+reference/       Waveshare 官方驱动与原理图（只读参考）
+docs/            设备操作手册
 ```
 
-## 功能
+---
 
-- **配网**：首次开机自动开启热点 `AICC-Phone-XXXX`（密码 `12345678`），手机连上后浏览器会自动弹出
-  配网页（或手动打开 `http://192.168.4.1`），页面列出附近 2.4G Wi-Fi，选一个输入密码即可。
-- **网页设置**：同一页面可修改 SIP 服务器、端口、拨打号码、用户名/密码、是否注册、音量、麦克风增益。
-  配网成功后在局域网内也可以通过 `http://<设备IP>/` 打开。
-- **拨号盘**：圆屏内的 12 键拨号盘；不输入号码直接按绿色按钮 = 呼叫预设号码（默认 `8888`）。
-- **通话**：呼出 / 来电接听 / 挂断 / 静音 / 音量调节，显示通话计时与收发音量电平。
-- **SIP**：直接 INVITE（FreeSWITCH 5080 外部口，免注册）或注册模式（5060，digest 认证）二选一；
-  自动通过 OPTIONS 响应的 `received/rport` 学习公网地址以穿越 NAT；RTP 对称收发，服务器侧自动纠正媒体地址。
-- **音频**：ES8311 + ES7210 + NS4150B 功放，16 kHz 采样、软件重采样到 8 kHz。
-- **回声消除**：使用 esp32 core 自带 esp-sr 的 AEC（`esp_aec.h`，`libs/ESP_SR_AEC` 已不再链接——两个 esp-sr 版本混进同一个
-  镜像会抢 `aec_*`/`afe_*` 符号），默认参数与 xiaozhi-esp32 在本板上相同
-  （全双工低功耗模式 + 最强 NLP）。V2 板的 ES7210 第 3 路麦克风输入在硬件上接的是 ES8311 的线路输出
-  （原理图 "AEC" 区块），ES7210 按 esp_codec_dev 的寄存器序列配置成 4 通道 TDM 后，64 位 I2S 帧里的
-  4 个 16 位槽位依次是 MIC1 / MIC3 / MIC2 / MIC4，槽位 1 就是回声参考。网页里可选 AEC 模式、麦克风/参考槽位、
-  参考通道增益；串口每 2 秒打印各槽位电平，便于核对。
+## 🔧 编译与烧录
 
-## 编译环境
-
-机器上已经具备：Arduino IDE 2（自带 arduino-cli 1.5.1）、esp32 core 3.3.10、
-`~/Documents/Arduino/libraries/lvgl`（9.3.0）以及与之并列的 `lv_conf.h`（工程里有同一份副本）。
-AEC 用 core 自带的 esp-sr，`libs/ESP_SR_AEC` 只是历史留存（仓库里仍保留，但 build.sh 不再 `--library` 引入它）。
-
-### 用脚本（推荐）
+编译环境：Arduino IDE 2（自带 arduino-cli 1.5.1）、esp32 core 3.3.10、LVGL 9.3.0
+（`~/Documents/Arduino/libraries/lvgl` 及并列的 `lv_conf.h`）。
 
 ```bash
-tools/build.sh          # 编译，产物在 build/
-tools/flash.sh          # 自动找 /dev/cu.usbmodem* 烧录；也可指定端口 tools/flash.sh /dev/cu.usbmodemXXXX
-tools/monitor.sh        # 115200 串口日志
+tools/build.sh                      # 编译
+tools/flash.sh /dev/cu.usbmodem2101          # 烧录固件
+tools/flash.sh /dev/cu.usbmodem2101 --models # 首次：连同唤醒词模型包一起烧
 ```
 
-### 用 Arduino IDE
+- **FQBN**：`esp32:esp32:waveshare_esp32_s3_touch_lcd_185`，PSRAM 开启，分区 `app3M_fat9M_16MB`。
+- **唤醒词模型**：`tools/srmodels/srmodels_cn.bin`（WakeNet9「你好小安」）烧入 `model` 分区（4MB @0x410000），
+  用 `tools/pack_models.sh` 重新打包。
+- **串口日志**：`python3 tools/serial_log.py /dev/cu.usbmodem2101 <秒数> <文件>`。
 
-打开 `aicc_phone/aicc_phone.ino`，开发板选 **Waveshare ESP32-S3-Touch-LCD-1.85**，并设置：
+---
 
-| 选项 | 值 |
-|---|---|
-| PSRAM | Enabled |
-| Flash Mode | QIO 80MHz |
-| Partition Scheme | 16M Flash (3MB APP/9.9MB FATFS) |
-| USB Mode | Hardware CDC and JTAG |
-| USB CDC On Boot | Enabled |
-| Upload Speed | 921600 |
+## 🚀 快速上手
 
-## 烧录
+1. 烧录固件（首次加 `--models`）。
+2. 手机连热点 `AICC-Phone-XXXX`（密码 `12345678`），在弹出的配网页选 Wi-Fi、填密码。
+3. 配网成功后浏览器打开 `http://<设备IP>/`，在「语音助手」卡片填入百炼 API Key（可选调模型、音色、联网搜索）。
+4. 对着设备说 **「你好小安」**，开始对话。
+5. 需要找前台时说 **「帮我打给前台」**，或在拨号盘直接呼叫。
 
-1. Type-C 线连接电脑。若系统没识别出串口，按住 **BOOT** 再按一下 **RESET**，松开 BOOT 进入下载模式。
-2. `tools/flash.sh`（或 IDE 上传）。
-3. 烧录完成后按 RESET，屏幕显示启动界面。
+---
 
-## 使用流程
+## 📄 许可与致谢
 
-1. 第一次开机 → 屏幕显示“配网模式”和热点名称。
-2. 手机连接该热点，配网页面自动弹出（iOS/Android 的“登录网络”页），选择家里的 2.4G Wi-Fi，输入密码，点“连接并保存”。
-3. 页面会显示连接结果；成功后设备自动进入拨号界面，热点会在 45 秒后关闭。
-4. 按绿色按钮即可呼叫预设号码；通话中可静音、调音量、挂断。
-5. 齿轮按钮 → 查看 IP / 服务器 / 状态，“重新配网”会清除 Wi-Fi 并重启。
-
-## 语音助手「小安」（Qwen Realtime 直连）
-
-- **角色**：客房里的**通用知识助手**——生活常识、饮食健康、历史、经济、人文艺术、天文地理、科学技术、旅行见闻、
-  语言学习都能聊，也能做简单计算、翻译、出主意（提示词见 `assistant.cpp` 的 `buildInstructions()`）。
-  **酒店自己的业务与政策**（早餐/退房时间、房型房价、账单、送物、维修、投诉、叫车、转人工）不在这里回答，
-  而是调 `call_front_desk` 拨通前台，由电话那头的**酒店客服 AI** 负责。
-- **唤醒**：本地 WakeNet9 "你好小安"（`wn9_nihaoxiaoan_tts2`，乐鑫免费商用模型），休眠时常开。命令词模型已不再使用。
-- **对话**：唤醒后播放提示音并与百炼 `qwen-audio-3.1-realtime-flash` 建立 WebSocket 会话（`voice_session.cpp`），
-  `smart_turn_v2` 轮次检测，麦克风经 AEC 后以 16 kHz PCM 上传，回复音频（默认 24 kHz）重采样后播放，可随时打断。
-  回复文字滚动显示在眼睛下方（全 GB2312 字体 `font_cjk_16.c`）；表情随状态切换（倾听/思考/说话/困倦）。
-- **工具**（function calling，`assistant.cpp`）：`set_volume`、`set_brightness`、`call_front_desk`（关闭会话后用 SIP 拨前台，
-  通话结束自动恢复对话）、`end_conversation`。
-- **休眠**：双方连续 `aiIdleSec`（默认 120 s）无人说话 → 关闭会话、关屏关功放，只保留 Wi-Fi 和唤醒词。
-  未注册模式（默认）下休眠时**不再发 SIP OPTIONS 心跳和 UDP 保活**——设备没有注册到 FreeSWITCH，
-  没有需要维持的 NAT 映射；唤醒时立即补一次 OPTIONS，刷新公网地址后再拨号。注册模式下心跳照常，以便接来电。
-  触摸屏幕、按 BOOT、来电都会亮屏。
-- **配置**（网页"语音助手"卡片）：API Key、模型、音色、接入主机名、回复采样率、休眠秒数、酒店信息（附加到提示词）。
-  API Key 只存在设备 NVS 里；正式部署前建议改为经服务器中转。
-- 模型包：`tools/pack_models.sh` 把 `tools/srmodels/src/` 打成 `tools/srmodels/srmodels_cn.bin`，`tools/flash.sh --models` 写入 `model` 分区。
-- 核心自带的 esp-sr 为 2.4.6，只支持 WakeNet9 系列模型（wn9 / wn9l / wn9s）。
-
-## SIP 对接说明（aicc / FreeSWITCH）
-
-- **默认（直连）**：INVITE `sip:<号码>@<服务器>:5080`，不注册。这是 FreeSWITCH external 口，
-  来话进入 `public` 上下文 → `aicc_inbound.lua` → 按 `luacc.dids` 表查 DID → 转给 AI 机器人。
-  **被叫号码必须是 aicc 里配置好的 DID**，否则 FreeSWITCH 回 `404 Not Found`。
-- **注册模式**：在网页里把“注册到服务器”改为“是”，端口改 5060，用户名/密码填 aicc 的分机或
-  模拟客户号码（如 `13800000001` / `aicc@123`）。注册后一样可以拨 DID，还能接收平台的回呼。
-- 编解码：只提供 PCMU/PCMA（8 kHz G.711），与 aicc 机器人侧一致。
-
-## 代码结构
-
-| 文件 | 作用 |
-|---|---|
-| `aicc_phone.ino` | 主流程：Wi-Fi/配网状态机、SIP 与 UI 的粘合、通话看门狗 |
-| `sip.h/.cpp` | 精简 SIP UA：REGISTER/INVITE/ACK/CANCEL/BYE/OPTIONS、digest 认证、重传、来电处理 |
-| `rtp.h/.cpp` | RTP 收发 + 抖动缓冲 + 简单丢包隐藏 |
-| `g711.*` | μ-law / A-law 编解码 |
-| `audio.*` | ES8311/ES7210/I2S 初始化、音频任务（采集→AEC→RTP 或云端会话、播放、铃声/回铃音、按键音） |
-| `voice_session.*` | Qwen Realtime WebSocket 客户端：会话配置、音频收发环形缓冲、事件解析、工具结果回传 |
-| `assistant.*` | 助手状态机：休眠 / 唤醒 / 会话 / 通话接管，工具执行，闲置休眠 |
-| `wake_word.*` | 本地唤醒词（WakeNet9） |
-| `libs/WebSockets` | arduinoWebSockets 2.7.2 的本地副本（帧上限 256 KB、PSRAM 帧缓冲、`idleHook`），见其 `PATCHED.md` |
-| `libs/ESP_SR_AEC` | 历史 esp-sr AEC 预编译库，**已不参与编译**（AEC 来自 core 自带 esp-sr） |
-| `ui.*` / `ui_strings.h` | LVGL 界面（所有控件都在圆形范围内）；中文字符串集中在 `ui_strings.h` |
-| `font_cn_18.c` / `font_cn_24.c` | 自动生成的中文字体（思源黑体子集 + ASCII + LVGL 图标） |
-| `web_portal.*` | 热点 + DNS 劫持 + 配网/设置网页 |
-| `es7210_board.*` | ES7210 四通道 ADC 初始化（复刻 esp_codec_dev 的寄存器序列，TDM + 回声参考通道） |
-| `es8311.*` | ES8311 解码器驱动（Waveshare 官方示例） |
-| `display.*` / `esp_lcd_st77916.*` | ST77916 QSPI 面板驱动（来自 Waveshare 官方示例） |
-| `touch.*` / `board_io.*` | CST816 触摸、TCA9554 扩展 IO、背光、I2C |
-| `lvgl_port.*` | LVGL 显示/触摸接入 |
-| `settings.*` | NVS 持久化配置 |
-| `config.h` | 引脚与默认参数（板型 V1/V2 开关 `BOARD_V2`） |
-
-新增界面文字后运行 `tools/gen_fonts.sh` 重新生成字体（需要 node/npx，使用 `tools/fonts/` 里的思源黑体）。
-
-## 已知限制 / 后续可做
-
-- AEC 的 CPU 开销尚未在真机测量：串口每 5 秒打印一行 `[AEC] avg ... us / chunk`，若平均值接近
-  chunk 时长（chunk=256 时为 16 ms）就在网页里切到"低功耗"模式。AEC 关闭时退回半双工抑制。
-- 未实现 DTMF（RFC 2833）发送、保持、转接。
-- V1 板（PCM5101 + 数字麦）代码路径保留但未测试（`config.h` 里 `BOARD_V2 0`）。
-- 仅 UDP 传输，不支持 TLS/SRTP。
+- 语音模型：阿里云百炼 [Qwen-Audio Realtime](https://help.aliyun.com/zh/model-studio/qwen-audio-realtime-user-guides)
+- 唤醒词 / AEC：[ESP-SR](https://github.com/espressif/esp-sr)（WakeNet9 wn9_nihaoxiaoan_tts2）
+- 音频驱动参考：[xiaozhi-esp32](https://github.com/78/xiaozhi-esp32)
+- 呼叫中心后端：[aicc（ai-native-callcenter）](https://github.com/rasonyang/ai-native-callcenter)
