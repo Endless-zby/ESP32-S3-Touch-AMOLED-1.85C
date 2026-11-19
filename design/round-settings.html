@@ -1,0 +1,1930 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3CradialGradient id='g' cx='35%25' cy='30%25'%3E%3Cstop offset='0' stop-color='%23dce8ff'/%3E%3Cstop offset='.55' stop-color='%23749eff'/%3E%3Cstop offset='1' stop-color='%23172e7a'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='16' cy='16' r='15' fill='url(%23g)'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23f2f6ff'/%3E%3C/svg%3E">
+<title>AICC Phone · 圆屏设置</title>
+<style>
+  :root {
+    --ink: #f4f7ff;
+    --muted: rgba(220, 229, 247, 0.56);
+    --faint: rgba(202, 214, 238, 0.34);
+    --line: rgba(255, 255, 255, 0.075);
+    --card: rgba(255, 255, 255, 0.055);
+    --card-hi: rgba(255, 255, 255, 0.08);
+    --blue: #6d9cff;
+    --mint: #63e4c7;
+    --amber: #ffc56d;
+    --orange: #ff9b63;
+    --red: #ff7b84;
+    --green: #57e391;
+    --screen-size: 360px;
+    --device-size: 600px;
+    --halo-alpha: 0.2;
+    --ease: cubic-bezier(0.22, 0.85, 0.24, 1);
+    font-synthesis: none;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    overflow: hidden;
+    color: var(--ink);
+    background: #03050a;
+    font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI",
+      "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "tnum" 1, "ss01" 1;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button:focus-visible,
+  [role="slider"]:focus-visible,
+  [role="switch"]:focus-visible {
+    outline: 1.5px solid rgba(255, 255, 255, 0.8);
+    outline-offset: 2px;
+  }
+
+  /* ---------------- ambient stage ---------------- */
+  .bg-grid {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.42;
+    background-image: radial-gradient(rgba(190, 210, 255, 0.13) 0.65px, transparent 0.65px);
+    background-size: 30px 30px;
+    -webkit-mask-image: radial-gradient(ellipse 58% 62% at 50% 50%, #000 0%, transparent 78%);
+    mask-image: radial-gradient(ellipse 58% 62% at 50% 50%, #000 0%, transparent 78%);
+  }
+
+  .ambient {
+    position: fixed;
+    inset: -24%;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(26% 27% at 33% 36%, rgba(57, 101, 255, 0.19), transparent 70%),
+      radial-gradient(22% 24% at 72% 68%, rgba(23, 196, 167, 0.10), transparent 72%),
+      radial-gradient(36% 22% at 54% 100%, rgba(255, 164, 81, 0.06), transparent 72%);
+    filter: blur(24px);
+    animation: ambient-drift 18s ease-in-out infinite alternate;
+  }
+
+  @keyframes ambient-drift {
+    from { transform: translate3d(-1.2%, -0.6%, 0) scale(1); }
+    to   { transform: translate3d(1.2%, 1.2%, 0) scale(1.04); }
+  }
+
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse at 50% 45%, transparent 36%, rgba(2, 4, 9, 0.64) 82%, #020409 100%),
+      linear-gradient(180deg, rgba(2, 4, 9, 0.28), transparent 24%, transparent 76%, rgba(2, 4, 9, 0.5));
+  }
+
+  .stage {
+    position: relative;
+    z-index: 2;
+    min-height: 100svh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+  }
+
+  .stage-top {
+    position: absolute;
+    z-index: 4;
+    top: 30px;
+    left: 38px;
+    right: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    pointer-events: none;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: 0.22em;
+    color: rgba(235, 241, 255, 0.66);
+  }
+
+  .brand-mark {
+    position: relative;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.9), transparent 23%),
+      radial-gradient(circle at 54% 55%, #7ca8ff, #2d54d9 62%, #101d4b 100%);
+    box-shadow:
+      0 0 0 1px rgba(180, 207, 255, 0.24),
+      0 0 18px rgba(72, 120, 255, 0.55),
+      0 2px 8px rgba(0, 0, 0, 0.6);
+  }
+
+  .brand-mark::after {
+    content: "";
+    position: absolute;
+    inset: 5px;
+    border-radius: 50%;
+    background: #eaf1ff;
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+  }
+
+  .stage-spec {
+    font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+    font-size: 9px;
+    letter-spacing: 0.17em;
+    color: rgba(206, 218, 239, 0.3);
+  }
+
+  .stage-footer {
+    position: absolute;
+    z-index: 4;
+    left: 50%;
+    bottom: 28px;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 17px;
+    white-space: nowrap;
+    color: rgba(206, 219, 241, 0.4);
+    font-size: 9.5px;
+    letter-spacing: 0.05em;
+    pointer-events: none;
+  }
+
+  .hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .hint svg {
+    width: 11px;
+    height: 11px;
+    opacity: 0.58;
+  }
+
+  .hint b {
+    color: rgba(237, 243, 255, 0.64);
+    font-weight: 500;
+  }
+
+  .hint-sep {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: rgba(218, 229, 247, 0.22);
+  }
+
+  /* ---------------- physical device ---------------- */
+  .device {
+    position: relative;
+    width: var(--device-size);
+    height: var(--device-size);
+    flex: 0 0 auto;
+    border-radius: 50%;
+    isolation: isolate;
+    background:
+      radial-gradient(circle at 34% 22%, #6b707c 0%, #393e48 14%, #1b1e25 32%, #090b0f 53%, #191b21 68%, #3c414c 83%, #0c0d11 100%);
+    box-shadow:
+      0 2px 1px rgba(255, 255, 255, 0.18) inset,
+      0 -2px 2px rgba(0, 0, 0, 0.75) inset,
+      0 0 0 1px rgba(255, 255, 255, 0.075),
+      0 60px 140px -28px rgba(0, 0, 0, 0.92),
+      0 26px 70px -24px rgba(16, 37, 83, 0.62),
+      0 0 96px -8px rgba(69, 113, 255, var(--halo-alpha));
+    animation: device-in 1s var(--ease) both;
+  }
+
+  @keyframes device-in {
+    from { opacity: 0; transform: translateY(15px) scale(0.982); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .device::before {
+    content: "";
+    position: absolute;
+    inset: 1.05%;
+    border-radius: 50%;
+    pointer-events: none;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.55),
+      inset 0 1px 1px rgba(255, 255, 255, 0.1),
+      inset 0 -3px 8px rgba(0, 0, 0, 0.7);
+    z-index: 4;
+  }
+
+  .device::after {
+    content: "";
+    position: absolute;
+    inset: 3.05%;
+    border-radius: 50%;
+    pointer-events: none;
+    border: 1px solid rgba(0, 0, 0, 0.85);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.035),
+      inset 0 0 15px rgba(0, 0, 0, 0.9);
+    z-index: 3;
+  }
+
+  .screen-wrap {
+    position: absolute;
+    z-index: 2;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #010204;
+    box-shadow:
+      inset 0 0 20px 5px rgba(0, 0, 0, 0.92),
+      0 0 0 1px rgba(0, 0, 0, 0.92);
+  }
+
+  .screen-wrap::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    border-radius: inherit;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse 65% 18% at 34% 1.5%, rgba(255, 255, 255, 0.2), transparent 66%),
+      linear-gradient(126deg, rgba(255, 255, 255, 0.075), transparent 19%, transparent 72%, rgba(255, 255, 255, 0.035) 90%, transparent);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+      inset 0 0 34px rgba(0, 0, 0, 0.32);
+  }
+
+  .screen {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: var(--screen-size);
+    height: var(--screen-size);
+    border-radius: 50%;
+    overflow: hidden;
+    transform-origin: center;
+    isolation: isolate;
+    color: var(--ink);
+    background: #060910;
+  }
+
+  .screen-bg {
+    position: absolute;
+    inset: 0;
+    z-index: -2;
+    background:
+      radial-gradient(125% 95% at 16% -6%, rgba(73, 118, 255, 0.21), transparent 56%),
+      radial-gradient(100% 90% at 103% 103%, rgba(34, 198, 169, 0.11), transparent 57%),
+      radial-gradient(72% 60% at 52% 48%, rgba(255, 255, 255, 0.018), transparent 72%),
+      linear-gradient(158deg, #0a0d17 0%, #070a12 48%, #060910 100%);
+  }
+
+  .screen-bg::before {
+    content: "";
+    position: absolute;
+    inset: 8%;
+    border-radius: 50%;
+    border: 1px solid rgba(153, 178, 255, 0.055);
+    box-shadow:
+      0 0 0 20px rgba(153, 178, 255, 0.015),
+      inset 0 0 55px rgba(34, 76, 180, 0.06);
+  }
+
+  .screen-bg::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(from 205deg at 50% 50%,
+      transparent 0deg 255deg,
+      rgba(115, 151, 255, 0.10) 271deg,
+      transparent 296deg 360deg);
+    -webkit-mask-image: radial-gradient(circle, transparent 63%, #000 65%, #000 86%, transparent 88%);
+    mask-image: radial-gradient(circle, transparent 63%, #000 65%, #000 86%, transparent 88%);
+  }
+
+  .screen-grain {
+    position: absolute;
+    inset: 0;
+    z-index: 29;
+    opacity: 0.042;
+    pointer-events: none;
+    mix-blend-mode: soft-light;
+    border-radius: 50%;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.86' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");
+  }
+
+  .screen-edge {
+    position: absolute;
+    inset: 0;
+    z-index: 28;
+    pointer-events: none;
+    border-radius: 50%;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.055),
+      inset 0 0 22px rgba(0, 0, 0, 0.42);
+  }
+
+  .dim {
+    position: absolute;
+    inset: 0;
+    z-index: 26;
+    pointer-events: none;
+    border-radius: 50%;
+    background: #000;
+    opacity: 0;
+    transition: opacity 180ms linear;
+  }
+
+  /* ---------------- status bar ---------------- */
+  .statusbar {
+    position: absolute;
+    z-index: 10;
+    top: 24px;
+    left: 50%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    color: rgba(225, 234, 250, 0.54);
+    font-size: 8.5px;
+    font-weight: 550;
+    letter-spacing: 0.08em;
+    transition: opacity 260ms ease, transform 260ms ease;
+  }
+
+  .statusbar svg {
+    width: 11px;
+    height: 11px;
+    opacity: 0.7;
+  }
+
+  .statusbar .sb-sep {
+    width: 2.5px;
+    height: 2.5px;
+    border-radius: 50%;
+    background: rgba(214, 228, 255, 0.35);
+  }
+
+  /* ---------------- page shell ---------------- */
+  .page {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    padding: 0 50px 30px;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    will-change: opacity, transform;
+  }
+
+  .page.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .page-head {
+    position: relative;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 34px;
+    margin-top: 56px;
+  }
+
+  .page-head h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.055em;
+    color: rgba(249, 251, 255, 0.97);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .settings-mark {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background:
+      radial-gradient(circle at 38% 28%, rgba(255, 255, 255, 0.15), transparent 45%),
+      linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.11),
+      0 6px 18px -10px rgba(0, 0, 0, 0.55),
+      0 0 22px rgba(105, 146, 255, 0.08);
+    color: rgba(241, 247, 255, 0.87);
+  }
+
+  .settings-mark::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.035);
+    pointer-events: none;
+  }
+
+  .settings-mark svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .back-btn {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.075);
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 4px 12px rgba(0, 0, 0, 0.18);
+    transform: translateY(-50%);
+    cursor: pointer;
+    transition: transform 150ms ease, background 150ms ease, border-color 150ms ease;
+  }
+
+  .back-btn svg {
+    width: 14px;
+    height: 14px;
+    margin-left: -1px;
+    color: rgba(238, 244, 255, 0.86);
+  }
+
+  .back-btn:hover {
+    background: rgba(255, 255, 255, 0.11);
+    border-color: rgba(255, 255, 255, 0.13);
+  }
+
+  .back-btn:active {
+    transform: translateY(-50%) scale(0.92);
+  }
+
+  /* ---------------- scroll area ---------------- */
+  .scroll {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    margin-top: 6px;
+    padding: 1px 2px 24px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 21px), transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 21px), transparent 100%);
+    touch-action: pan-y;
+  }
+
+  .scroll::-webkit-scrollbar { display: none; }
+
+  .scroll:focus-visible {
+    outline: 1px solid rgba(255, 255, 255, 0.16);
+    outline-offset: -3px;
+    border-radius: 18px;
+  }
+
+  .scroll-shade {
+    position: absolute;
+    z-index: 9;
+    top: 92px;
+    left: 48px;
+    right: 48px;
+    height: 30px;
+    opacity: 0;
+    pointer-events: none;
+    background: linear-gradient(to bottom,
+      rgba(7, 10, 17, 0.98) 0%,
+      rgba(7, 10, 17, 0.82) 30%,
+      rgba(7, 10, 17, 0) 100%);
+    transition: opacity 230ms ease;
+  }
+
+  .page.is-scrolled .scroll-shade { opacity: 1; }
+
+  .scroll-cue {
+    position: absolute;
+    z-index: 11;
+    left: 50%;
+    bottom: 13px;
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    transform: translateX(-50%);
+    color: rgba(224, 234, 252, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 260ms ease;
+  }
+
+  .scroll-cue.show {
+    opacity: 1;
+    animation: cue-bob 1.9s ease-in-out infinite;
+  }
+
+  .scroll-cue svg { width: 12px; height: 12px; }
+
+  @keyframes cue-bob {
+    0%, 100% { transform: translate(-50%, 0); }
+    50% { transform: translate(-50%, 2.5px); }
+  }
+
+  /* ---------------- full-area level cards ---------------- */
+  .level-card {
+    --icon: var(--amber);
+    --icon-rgb: 255, 197, 109;
+    --icon-dark: #885a05;
+    --fill-start: #fff7e8;
+    --fill-end: #ffffff;
+    position: relative;
+    flex: 0 0 auto;
+    height: 46px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.068);
+    border-radius: 16px;
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.062), rgba(255, 255, 255, 0.022));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.045),
+      0 7px 18px -14px rgba(0, 0, 0, 0.52);
+    cursor: pointer;
+    touch-action: pan-y;
+    isolation: isolate;
+    transition: transform 140ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  }
+
+  .level-card + .level-card { margin-top: 7px; }
+
+  .level-card[data-level="volume"] {
+    --icon: var(--mint);
+    --icon-rgb: 99, 228, 199;
+    --icon-dark: #08695a;
+    --fill-start: #ecfffa;
+    --fill-end: #ffffff;
+  }
+
+  .level-card.is-active {
+    border-color: rgba(var(--icon-rgb), 0.38);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 0 0 1px rgba(var(--icon-rgb), 0.06),
+      0 12px 28px -16px rgba(0, 0, 0, 0.65),
+      0 0 26px -12px rgba(var(--icon-rgb), 0.32);
+    transform: scale(0.996);
+  }
+
+  .level-fill {
+    position: absolute;
+    z-index: 0;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: var(--p, 50%);
+    border-radius: 15px 0 0 15px;
+    background:
+      linear-gradient(90deg, var(--fill-start), var(--fill-end) 78%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.85),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.035);
+    pointer-events: none;
+    transition: filter 160ms ease;
+  }
+
+  .level-card.is-active .level-fill { filter: brightness(1.03); }
+
+  .level-content {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 11px;
+    color: rgba(248, 251, 255, 0.96);
+    pointer-events: none;
+  }
+
+  .level-content.level-inverse {
+    z-index: 2;
+    color: #10141b;
+    clip-path: inset(0 calc(100% - var(--p, 50%)) 0 0);
+  }
+
+  .level-icon {
+    width: 25px;
+    height: 25px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    color: var(--icon);
+    background: rgba(var(--icon-rgb), 0.12);
+    border: 1px solid rgba(var(--icon-rgb), 0.17);
+    box-shadow: inset 0 0 10px rgba(var(--icon-rgb), 0.05);
+  }
+
+  .level-icon svg { width: 13.5px; height: 13.5px; }
+
+  .level-content.level-inverse .level-icon {
+    color: var(--icon-dark);
+    background: rgba(255, 255, 255, 0.48);
+    border-color: rgba(0, 0, 0, 0.055);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+  }
+
+  .level-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .level-title {
+    font-size: 11px;
+    font-weight: 570;
+    line-height: 1.15;
+    letter-spacing: 0.01em;
+    color: inherit;
+  }
+
+  .level-sub {
+    font-size: 7.5px;
+    line-height: 1.15;
+    letter-spacing: 0.02em;
+    color: rgba(222, 233, 250, 0.36);
+  }
+
+  .level-content.level-inverse .level-sub {
+    color: rgba(14, 21, 33, 0.48);
+  }
+
+  .level-value {
+    margin-left: auto;
+    font-size: 11.5px;
+    font-weight: 620;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    color: inherit;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 12px rgba(255, 255, 255, 0.08);
+  }
+
+  .level-content.level-inverse .level-value {
+    text-shadow: none;
+  }
+
+  .level-value small {
+    margin-left: 1px;
+    font-size: 7px;
+    font-weight: 500;
+    opacity: 0.56;
+  }
+
+  /* A thin marker appears only while the card is hovered or being dragged. */
+  .level-edge {
+    position: absolute;
+    z-index: 3;
+    top: 8px;
+    bottom: 8px;
+    left: var(--p, 50%);
+    width: 2px;
+    transform: translateX(-1px);
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow:
+      0 0 0 1px rgba(13, 18, 28, 0.17),
+      0 0 9px rgba(255, 255, 255, 0.28);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+
+  .level-card.is-active .level-edge,
+  .level-card:hover .level-edge,
+  .level-card:focus-visible .level-edge {
+    opacity: 0.84;
+  }
+
+  .icon-bump {
+    animation: icon-bump 320ms var(--ease);
+  }
+
+  @keyframes icon-bump {
+    0% { transform: scale(1); }
+    42% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+  }
+
+  /* ---------------- rows ---------------- */
+  .section-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 4px 4px 3px;
+    height: 8px;
+    font-size: 7.5px;
+    line-height: 8px;
+    font-weight: 620;
+    letter-spacing: 0.18em;
+    color: rgba(214, 226, 246, 0.34);
+    flex: 0 0 auto;
+  }
+
+  .section-label::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.085), transparent);
+  }
+
+  .row {
+    position: relative;
+    width: 100%;
+    min-height: 46px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 11px;
+    text-align: left;
+    border: 1px solid rgba(255, 255, 255, 0.068);
+    border-radius: 16px;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.062), rgba(255, 255, 255, 0.022));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.045),
+      0 7px 18px -14px rgba(0, 0, 0, 0.52);
+    cursor: pointer;
+    transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  }
+
+  .row + .row { margin-top: 7px; }
+
+  .row:hover {
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.079), rgba(255, 255, 255, 0.027));
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .row:active { transform: scale(0.986); }
+
+  .row-icon {
+    width: 25px;
+    height: 25px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    color: var(--blue);
+    background: rgba(109, 156, 255, 0.10);
+    border: 1px solid rgba(109, 156, 255, 0.14);
+  }
+
+  .row-icon svg { width: 13.5px; height: 13.5px; }
+
+  .row-icon.amber {
+    color: var(--orange);
+    background: rgba(255, 155, 99, 0.09);
+    border-color: rgba(255, 155, 99, 0.13);
+  }
+
+  .row-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .row-title {
+    font-size: 11px;
+    font-weight: 570;
+    line-height: 1.15;
+    letter-spacing: 0.01em;
+    color: rgba(247, 250, 255, 0.92);
+  }
+
+  .row-sub {
+    font-size: 7.5px;
+    line-height: 1.15;
+    color: rgba(211, 223, 243, 0.34);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .row-right {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: rgba(215, 227, 247, 0.38);
+    font-size: 8px;
+    white-space: nowrap;
+  }
+
+  .row-right .mini-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .row-right .mini-state i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px rgba(87, 227, 145, 0.65);
+  }
+
+  .chevron {
+    width: 12px;
+    height: 12px;
+    opacity: 0.45;
+    margin-right: -2px;
+  }
+
+  .toggle-row .row-copy { flex: 1; }
+
+  .switch {
+    position: relative;
+    flex: 0 0 auto;
+    width: 30px;
+    height: 17px;
+    margin-left: auto;
+    border-radius: 99px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(255, 255, 255, 0.095);
+    transition: background 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+    transition: transform 240ms var(--ease);
+  }
+
+  .toggle-row[aria-checked="true"] .switch {
+    background: linear-gradient(90deg, #467cf0, #6aa6ff);
+    border-color: rgba(138, 176, 255, 0.3);
+    box-shadow: 0 0 12px rgba(76, 135, 255, 0.32);
+  }
+
+  .toggle-row[aria-checked="true"] .switch::after {
+    transform: translateX(13px);
+  }
+
+  .row.reset-row.is-armed {
+    border-color: rgba(255, 123, 132, 0.27);
+    background:
+      linear-gradient(145deg, rgba(255, 123, 132, 0.12), rgba(255, 123, 132, 0.035));
+  }
+
+  .row.reset-row.is-armed .row-title { color: #ffd1d4; }
+  .row.reset-row.is-armed .row-sub { color: rgba(255, 190, 195, 0.55); }
+
+  .version-foot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    margin-top: 13px;
+    padding-bottom: 2px;
+    color: rgba(205, 218, 240, 0.22);
+    font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+    font-size: 7px;
+    letter-spacing: 0.08em;
+  }
+
+  /* ---------------- system info page ---------------- */
+  .info-hero {
+    position: relative;
+    overflow: hidden;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 63px;
+    padding: 9px 11px;
+    border: 1px solid rgba(255, 255, 255, 0.075);
+    border-radius: 18px;
+    background:
+      radial-gradient(150px 60px at 15% 0%, rgba(92, 140, 255, 0.18), transparent 72%),
+      linear-gradient(145deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.022));
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.055),
+      0 10px 24px -18px rgba(0, 0, 0, 0.55);
+  }
+
+  .info-hero::after {
+    content: "";
+    position: absolute;
+    right: -20px;
+    top: -30px;
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    border: 1px solid rgba(130, 168, 255, 0.075);
+    pointer-events: none;
+  }
+
+  .hero-icon {
+    width: 38px;
+    height: 38px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    color: #c8d8ff;
+    background:
+      linear-gradient(145deg, rgba(113, 154, 255, 0.24), rgba(65, 111, 235, 0.09));
+    border: 1px solid rgba(139, 173, 255, 0.17);
+    box-shadow: inset 0 0 14px rgba(77, 121, 255, 0.12);
+  }
+
+  .hero-icon svg { width: 20px; height: 20px; }
+
+  .hero-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .hero-copy strong {
+    font-size: 11.5px;
+    font-weight: 620;
+    letter-spacing: 0.02em;
+    color: rgba(249, 251, 255, 0.94);
+  }
+
+  .hero-copy span {
+    font-size: 7.5px;
+    color: rgba(212, 225, 246, 0.38);
+    letter-spacing: 0.02em;
+  }
+
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    align-self: flex-start;
+    margin-top: 3px;
+    padding: 4px 6px;
+    border-radius: 99px;
+    background: rgba(87, 227, 145, 0.075);
+    border: 1px solid rgba(87, 227, 145, 0.13);
+    color: rgba(178, 247, 207, 0.8);
+    font-size: 7px;
+    letter-spacing: 0.03em;
+  }
+
+  .hero-badge i {
+    width: 3.5px;
+    height: 3.5px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px rgba(87, 227, 145, 0.75);
+  }
+
+  .info-card {
+    flex: 0 0 auto;
+    padding: 3px 11px;
+    border: 1px solid rgba(255, 255, 255, 0.065);
+    border-radius: 16px;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  .info-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 31px;
+    font-size: 9px;
+    letter-spacing: 0.015em;
+  }
+
+  .info-row + .info-row {
+    border-top: 1px solid rgba(255, 255, 255, 0.045);
+  }
+
+  .info-row dt {
+    margin: 0;
+    flex: 0 0 auto;
+    color: rgba(205, 219, 242, 0.37);
+  }
+
+  .info-row dd {
+    margin: 0;
+    min-width: 0;
+    text-align: right;
+    color: rgba(241, 246, 255, 0.82);
+    font-weight: 470;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .info-row dd.good {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: rgba(190, 246, 214, 0.86);
+  }
+
+  .info-row dd.good i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 7px rgba(87, 227, 145, 0.7);
+  }
+
+  .info-row dd .mono {
+    font-family: "SFMono-Regular", ui-monospace, Menlo, monospace;
+    font-size: 8.5px;
+    letter-spacing: -0.01em;
+  }
+
+  .info-foot {
+    display: flex;
+    justify-content: center;
+    margin-top: 11px;
+    color: rgba(205, 219, 242, 0.2);
+    font-size: 7px;
+    letter-spacing: 0.04em;
+  }
+
+  /* ---------------- toast ---------------- */
+  .toast {
+    position: absolute;
+    z-index: 27;
+    left: 50%;
+    bottom: 43px;
+    max-width: 230px;
+    padding: 7px 12px;
+    transform: translate(-50%, 7px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 99px;
+    background: rgba(18, 24, 37, 0.88);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    color: rgba(241, 246, 255, 0.9);
+    font-size: 8.5px;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms ease, transform 220ms var(--ease);
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  /* ---------------- responsive ---------------- */
+  @media (max-width: 720px) {
+    .stage { padding: 20px; }
+    .stage-top { top: 18px; left: 20px; right: 20px; }
+    .stage-footer { display: none; }
+    .stage-spec { font-size: 8px; }
+  }
+
+  @media (max-width: 520px) {
+    .stage-spec { display: none; }
+  }
+
+  @media (max-height: 640px) {
+    .stage-footer { display: none; }
+    .stage-top { top: 18px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-grid" aria-hidden="true"></div>
+<div class="ambient" aria-hidden="true"></div>
+
+<div class="stage">
+  <div class="stage-top" aria-hidden="true">
+    <div class="brand">
+      <span class="brand-mark"></span>
+      <span>AICC PHONE</span>
+    </div>
+    <div class="stage-spec">ROUND UI&nbsp;&nbsp;·&nbsp;&nbsp;1.85″&nbsp;&nbsp;·&nbsp;&nbsp;360 × 360</div>
+  </div>
+
+  <div class="device" id="device" role="application" aria-label="AICC Phone 圆形屏幕设置界面原型">
+    <div class="screen-wrap" id="screenWrap">
+      <div class="screen" id="screen" data-page="settings">
+        <div class="screen-bg" aria-hidden="true"></div>
+
+        <div class="statusbar" aria-hidden="true">
+          <span id="statusTime">18:58</span>
+          <span class="sb-sep"></span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M3 9.5a13 13 0 0 1 18 0"/>
+            <path d="M6.2 13a8.4 8.4 0 0 1 11.6 0"/>
+            <path d="M9.4 16.4a3.8 3.8 0 0 1 5.2 0"/>
+            <circle cx="12" cy="19.4" r=".9" fill="currentColor" stroke="none"/>
+          </svg>
+        </div>
+
+        <!-- ============ 设置主页 ============ -->
+        <section class="page page-settings active" data-page="settings" aria-label="设置">
+          <header class="page-head">
+            <span class="settings-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3.1"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </span>
+            <h1 class="sr-only">设置</h1>
+          </header>
+          <div class="scroll-shade" aria-hidden="true"></div>
+
+          <div class="scroll" data-scroll="settings" tabindex="0" aria-label="设置列表，可上下滚动">
+            <article class="level-card" data-level="brightness" role="slider" tabindex="0"
+                     aria-label="亮度" aria-valuemin="10" aria-valuemax="100" aria-valuenow="80" aria-valuetext="80%"
+                     style="--p: 80%">
+              <div class="level-fill" aria-hidden="true"></div>
+              <div class="level-content" aria-hidden="true">
+                <span class="level-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                    <circle cx="12" cy="12" r="4.1"/>
+                    <path d="M12 2.4v2.1M12 19.5v2.1M4.8 4.8l1.5 1.5M17.7 17.7l1.5 1.5M2.4 12h2.1M19.5 12h2.1M4.8 19.2l1.5-1.5M17.7 6.3l1.5-1.5"/>
+                  </svg>
+                </span>
+                <span class="level-copy">
+                  <span class="level-title">亮度</span>
+                  <span class="level-sub">屏幕背光</span>
+                </span>
+                <span class="level-value"><span data-value="brightness">80</span><small>%</small></span>
+              </div>
+              <div class="level-content level-inverse" aria-hidden="true">
+                <span class="level-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                    <circle cx="12" cy="12" r="4.1"/>
+                    <path d="M12 2.4v2.1M12 19.5v2.1M4.8 4.8l1.5 1.5M17.7 17.7l1.5 1.5M2.4 12h2.1M19.5 12h2.1M4.8 19.2l1.5-1.5M17.7 6.3l1.5-1.5"/>
+                  </svg>
+                </span>
+                <span class="level-copy">
+                  <span class="level-title">亮度</span>
+                  <span class="level-sub">屏幕背光</span>
+                </span>
+                <span class="level-value"><span data-value="brightness">80</span><small>%</small></span>
+              </div>
+              <span class="level-edge" aria-hidden="true"></span>
+            </article>
+
+            <article class="level-card" data-level="volume" role="slider" tabindex="0"
+                     aria-label="音量" aria-valuemin="0" aria-valuemax="100" aria-valuenow="60" aria-valuetext="60%"
+                     style="--p: 60%">
+              <div class="level-fill" aria-hidden="true"></div>
+              <div class="level-content" aria-hidden="true">
+                <span class="level-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11.5 4.8 7.2 8.2H3.8v7.6h3.4l4.3 3.4V4.8z"/>
+                    <path d="M15.3 8.4a5.2 5.2 0 0 1 0 7.2"/>
+                    <path d="M18.1 5.7a9 9 0 0 1 0 12.6"/>
+                  </svg>
+                </span>
+                <span class="level-copy">
+                  <span class="level-title">音量</span>
+                  <span class="level-sub">通话音量</span>
+                </span>
+                <span class="level-value"><span data-value="volume">60</span><small>%</small></span>
+              </div>
+              <div class="level-content level-inverse" aria-hidden="true">
+                <span class="level-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11.5 4.8 7.2 8.2H3.8v7.6h3.4l4.3 3.4V4.8z"/>
+                    <path d="M15.3 8.4a5.2 5.2 0 0 1 0 7.2"/>
+                    <path d="M18.1 5.7a9 9 0 0 1 0 12.6"/>
+                  </svg>
+                </span>
+                <span class="level-copy">
+                  <span class="level-title">音量</span>
+                  <span class="level-sub">通话音量</span>
+                </span>
+                <span class="level-value"><span data-value="volume">60</span><small>%</small></span>
+              </div>
+              <span class="level-edge" aria-hidden="true"></span>
+            </article>
+
+            <div class="section-label">设备</div>
+
+            <button class="row" type="button" data-goto="info">
+              <span class="row-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+                  <circle cx="12" cy="12" r="8.2"/>
+                  <path d="M12 11.1v5.1"/>
+                  <circle cx="12" cy="7.8" r=".9" fill="currentColor" stroke="none"/>
+                </svg>
+              </span>
+              <span class="row-copy">
+                <span class="row-title">系统信息</span>
+                <span class="row-sub">网络 · 电话 · 版本</span>
+              </span>
+              <span class="row-right">
+                <span class="mini-state"><i></i>正常</span>
+                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </span>
+            </button>
+
+            <div class="row toggle-row" role="switch" aria-checked="true" tabindex="0" data-toggle="keySound">
+              <span class="row-icon amber" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9.5 18.1V5.5l9.2-1.8v12.2"/>
+                  <circle cx="6.3" cy="18.5" r="2.9"/>
+                  <circle cx="15.5" cy="16.4" r="2.9"/>
+                </svg>
+              </span>
+              <span class="row-copy">
+                <span class="row-title">按键音</span>
+                <span class="row-sub">点按时播放轻提示音</span>
+              </span>
+              <span class="switch" aria-hidden="true"></span>
+            </div>
+
+            <button class="row reset-row" type="button" data-reset>
+              <span class="row-icon amber" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 11.3a8 8 0 1 1-2.4-5.6"/>
+                  <path d="M20 4v7.3h-7.3"/>
+                </svg>
+              </span>
+              <span class="row-copy">
+                <span class="row-title" data-reset-title>重新配网</span>
+                <span class="row-sub" data-reset-sub>清除 Wi-Fi 并重启设备</span>
+              </span>
+              <span class="row-right">
+                <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </span>
+            </button>
+
+            <div class="version-foot">AICC PHONE · FIRMWARE 1.8.5</div>
+          </div>
+
+          <div class="scroll-cue" data-cue="settings" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+          </div>
+        </section>
+
+        <!-- ============ 系统信息 ============ -->
+        <section class="page page-info" data-page="info" aria-label="系统信息">
+          <header class="page-head">
+            <button class="back-btn" type="button" data-back aria-label="返回设置">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15 18l-6-6 6-6"/>
+              </svg>
+            </button>
+            <h1>系统信息</h1>
+          </header>
+          <div class="scroll-shade" aria-hidden="true"></div>
+
+          <div class="scroll" data-scroll="info" tabindex="0" aria-label="系统信息列表，可上下滚动">
+            <div class="info-hero">
+              <span class="hero-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                  <rect x="6.2" y="2.8" width="11.6" height="18.4" rx="3"/>
+                  <path d="M10.2 18.4h3.6"/>
+                  <path d="M9.4 6.2h5.2"/>
+                </svg>
+              </span>
+              <span class="hero-copy">
+                <strong>AICC Phone</strong>
+                <span>ESP32-S3 · 1.85″ 圆屏</span>
+              </span>
+              <span class="hero-badge"><i></i>运行中</span>
+            </div>
+
+            <div class="section-label">网络</div>
+            <dl class="info-card">
+              <div class="info-row">
+                <dt>Wi-Fi</dt>
+                <dd class="good"><i></i>已连接</dd>
+              </div>
+              <div class="info-row">
+                <dt>IP 地址</dt>
+                <dd><span class="mono">192.168.1.23</span></dd>
+              </div>
+              <div class="info-row">
+                <dt>信号强度</dt>
+                <dd>−48 dBm</dd>
+              </div>
+            </dl>
+
+            <div class="section-label">电话</div>
+            <dl class="info-card">
+              <div class="info-row">
+                <dt>SIP 状态</dt>
+                <dd class="good"><i></i>已注册</dd>
+              </div>
+              <div class="info-row">
+                <dt>服务器</dt>
+                <dd><span class="mono">192.168.1.10:5060</span></dd>
+              </div>
+              <div class="info-row">
+                <dt>本机号码</dt>
+                <dd><span class="mono">8888</span></dd>
+              </div>
+            </dl>
+
+            <div class="section-label">设备</div>
+            <dl class="info-card">
+              <div class="info-row">
+                <dt>型号</dt>
+                <dd>ESP32-S3-Touch-LCD-1.85</dd>
+              </div>
+              <div class="info-row">
+                <dt>固件版本</dt>
+                <dd><span class="mono">v1.8.5</span></dd>
+              </div>
+              <div class="info-row">
+                <dt>屏幕</dt>
+                <dd>360 × 360</dd>
+              </div>
+              <div class="info-row">
+                <dt>运行时间</dt>
+                <dd>2 天 05:41</dd>
+              </div>
+            </dl>
+
+            <div class="info-foot">诊断信息仅在本机显示</div>
+          </div>
+
+          <div class="scroll-cue" data-cue="info" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 9l6 6 6-6"/>
+            </svg>
+          </div>
+        </section>
+
+        <div class="dim" id="dim" aria-hidden="true"></div>
+        <div class="screen-grain" aria-hidden="true"></div>
+        <div class="screen-edge" aria-hidden="true"></div>
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage-footer" aria-hidden="true">
+    <span class="hint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6v12M8 6l-3 3M8 6l3 3M16 18V6M16 18l-3-3M16 18l3-3"/></svg>
+      <span><b>上下拖动</b> 浏览设置</span>
+    </span>
+    <span class="hint-sep"></span>
+    <span class="hint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M3 12l4-4M21 12l-4-4M3 12l4 4M21 12l-4 4"/></svg>
+      <span><b>左右滑动</b> 即时调节</span>
+    </span>
+    <span class="hint-sep"></span>
+    <span class="hint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 11v5"/><circle cx="12" cy="8" r=".9" fill="currentColor" stroke="none"/></svg>
+      <span><b>点按</b> 查看系统信息</span>
+    </span>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const screenEl = document.getElementById("screen");
+  const wrapEl = document.getElementById("screenWrap");
+  const dimEl = document.getElementById("dim");
+  const toastEl = document.getElementById("toast");
+  const statusTime = document.getElementById("statusTime");
+
+  const pageEls = {
+    settings: screenEl.querySelector('[data-page="settings"]'),
+    info: screenEl.querySelector('[data-page="info"]'),
+  };
+
+  const backMap = { info: "settings" };
+  const state = {
+    brightness: 80,
+    volume: 60,
+    keySound: true,
+    current: "settings",
+    resetArmed: false,
+    resetTimer: 0,
+  };
+
+  const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------------- fit the 360px canvas inside the bezel ---------------- */
+  function fitDevice() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    // Account for the stage gutter as well as the viewport so the bezel never
+    // overflows on narrow phones.
+    const maxWidth = vw - (vw < 700 ? 44 : 100);
+    const maxHeight = vh - (vh < 700 ? 34 : 100);
+    const size = Math.max(300, Math.min(620, maxWidth, maxHeight));
+    const rim = clamp(size * 0.030, 8, 19);
+    const inner = size - rim * 2;
+    const zoom = inner / 360;
+
+    document.documentElement.style.setProperty("--device-size", size + "px");
+    wrapEl.style.inset = rim + "px";
+    screenEl.style.transform = `translate(-50%, -50%) scale(${zoom})`;
+  }
+
+  fitDevice();
+  window.addEventListener("resize", fitDevice, { passive: true });
+
+  /* ---------------- clock ---------------- */
+  function updateClock() {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, "0");
+    const mm = String(now.getMinutes()).padStart(2, "0");
+    statusTime.textContent = `${hh}:${mm}`;
+  }
+
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  /* ---------------- toast ---------------- */
+  let toastTimer = 0;
+  function showToast(message, ms = 1600) {
+    toastEl.textContent = message;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove("show"), ms);
+  }
+
+  /* ---------------- tiny UI tick sound ---------------- */
+  let audioCtx = null;
+  let lastTick = 0;
+  let lastTickValue = -1;
+
+  function tick(force = false) {
+    if (!state.keySound) return;
+    const now = performance.now();
+    if (!force && (now - lastTick < 36 || Math.abs(state.volume - lastTickValue) < 2)) return;
+    lastTick = now;
+    lastTickValue = state.volume;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      audioCtx = audioCtx || new Ctx();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      const t = audioCtx.currentTime;
+      const amp = 0.014 + (state.volume / 100) * 0.018;
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(980, t);
+      osc.frequency.exponentialRampToValueAtTime(760, t + 0.028);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(amp, t + 0.004);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t);
+      osc.stop(t + 0.05);
+    } catch (_) { /* audio is a nice-to-have */ }
+  }
+
+  /* ---------------- brightness ---------------- */
+  function applyBrightness(value) {
+    state.brightness = value;
+    // The panel is dimmed for real, but keep enough contrast to preserve the demo.
+    const dim = clamp(((100 - value) / 90) * 0.57, 0, 0.5);
+    dimEl.style.opacity = dim.toFixed(3);
+    const halo = 0.09 + (value / 100) * 0.23;
+    document.documentElement.style.setProperty("--halo-alpha", halo.toFixed(3));
+  }
+
+  /* ---------------- full-area horizontal level cards ---------------- */
+  const levels = {};
+
+  function setLevelValue(kind, value, options = {}) {
+    const spec = levels[kind];
+    if (!spec) return;
+
+    const min = kind === "brightness" ? 10 : 0;
+    const v = clamp(Math.round(value), min, 100);
+    if (state[kind] === v && !options.force) return;
+
+    state[kind] = v;
+    spec.card.style.setProperty("--p", v + "%");
+    spec.card.setAttribute("aria-valuenow", String(v));
+    spec.card.setAttribute("aria-valuetext", v + "%");
+    spec.card.querySelectorAll(`[data-value="${kind}"]`).forEach((el) => {
+      el.textContent = String(v);
+    });
+
+    if (kind === "brightness") {
+      applyBrightness(v);
+    }
+
+    spec.card.querySelectorAll(".level-icon").forEach((icon) => {
+      icon.classList.remove("icon-bump");
+      void icon.offsetWidth;
+      icon.classList.add("icon-bump");
+    });
+
+    if (!options.silent) tick();
+  }
+
+  function setupLevel(kind) {
+    const card = screenEl.querySelector(`.level-card[data-level="${kind}"]`);
+    if (!card) return;
+
+    levels[kind] = { card };
+    let pointerId = null;
+    let startX = 0;
+    let startY = 0;
+    let dragging = false;
+    let verticalIntent = false;
+
+    function valueFromClientX(clientX) {
+      const rect = card.getBoundingClientRect();
+      const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
+      return kind === "brightness" ? 10 + ratio * 90 : ratio * 100;
+    }
+
+    function updateFromEvent(event) {
+      setLevelValue(kind, valueFromClientX(event.clientX));
+    }
+
+    function beginDrag(event) {
+      dragging = true;
+      verticalIntent = false;
+      card.classList.add("is-active");
+      try { card.setPointerCapture(pointerId); } catch (_) {}
+      updateFromEvent(event);
+    }
+
+    function cleanup() {
+      pointerId = null;
+      dragging = false;
+      verticalIntent = false;
+      card.classList.remove("is-active");
+    }
+
+    card.addEventListener("pointerdown", (event) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      pointerId = event.pointerId;
+      startX = event.clientX;
+      startY = event.clientY;
+      dragging = false;
+      verticalIntent = false;
+
+      if (event.pointerType === "mouse") {
+        event.preventDefault();
+        beginDrag(event);
+      }
+    });
+
+    card.addEventListener("pointermove", (event) => {
+      if (event.pointerId !== pointerId) return;
+
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+
+      if (!dragging) {
+        // Wait for a clear horizontal gesture so a vertical drag still scrolls
+        // the list instead of changing the level.
+        if (Math.abs(dx) > 5 && Math.abs(dx) > Math.abs(dy) + 2) {
+          if (event.cancelable) event.preventDefault();
+          beginDrag(event);
+        } else if (Math.abs(dy) > 8) {
+          verticalIntent = true;
+        }
+        return;
+      }
+
+      if (event.cancelable) event.preventDefault();
+      updateFromEvent(event);
+    });
+
+    card.addEventListener("pointerup", (event) => {
+      if (event.pointerId !== pointerId) return;
+
+      if (!dragging && !verticalIntent) {
+        // A tap on any part of the card jumps to that horizontal position.
+        setLevelValue(kind, valueFromClientX(event.clientX));
+        card.classList.add("is-active");
+        window.setTimeout(() => card.classList.remove("is-active"), 220);
+      }
+
+      if (card.hasPointerCapture && card.hasPointerCapture(pointerId)) {
+        try { card.releasePointerCapture(pointerId); } catch (_) {}
+      }
+      cleanup();
+    });
+
+    card.addEventListener("pointercancel", cleanup);
+    card.addEventListener("lostpointercapture", cleanup);
+
+    card.addEventListener("keydown", (event) => {
+      const step = event.shiftKey ? 10 : 5;
+      let next = state[kind];
+      if (event.key === "ArrowRight" || event.key === "ArrowUp") next += step;
+      else if (event.key === "ArrowLeft" || event.key === "ArrowDown") next -= step;
+      else if (event.key === "Home") next = kind === "brightness" ? 10 : 0;
+      else if (event.key === "End") next = 100;
+      else return;
+      event.preventDefault();
+      setLevelValue(kind, next);
+      card.classList.add("is-active");
+      window.setTimeout(() => card.classList.remove("is-active"), 260);
+    });
+
+    setLevelValue(kind, state[kind], { force: true, silent: true });
+  }
+
+  setupLevel("brightness");
+  setupLevel("volume");
+  applyBrightness(state.brightness);
+
+  /* ---------------- page transitions ---------------- */
+  function navigate(to, direction = "forward") {
+    if (!pageEls[to] || to === state.current) return;
+    const from = pageEls[state.current];
+    const target = pageEls[to];
+    const dx = direction === "forward" ? 24 : -24;
+
+    target.style.zIndex = "5";
+    from.style.zIndex = "4";
+    target.classList.add("active");
+    from.style.pointerEvents = "none";
+    target.style.pointerEvents = "auto";
+
+    if (!reduceMotion) {
+      const inAnim = target.animate(
+        [
+          { opacity: 0, transform: `translateX(${dx}px) scale(0.982)` },
+          { opacity: 1, transform: "translateX(0) scale(1)" }
+        ],
+        { duration: 340, easing: "cubic-bezier(0.22, 0.85, 0.24, 1)" }
+      );
+      const outAnim = from.animate(
+        [
+          { opacity: 1, transform: "translateX(0) scale(1)" },
+          { opacity: 0, transform: `translateX(${-dx}px) scale(0.982)` }
+        ],
+        { duration: 300, easing: "cubic-bezier(0.25, 0.8, 0.25, 1)" }
+      );
+      inAnim.onfinish = () => { target.getAnimations().forEach((a) => a.cancel()); };
+      outAnim.onfinish = () => {
+        from.classList.remove("active");
+        from.style.pointerEvents = "";
+        from.style.zIndex = "";
+        outAnim.cancel();
+      };
+    } else {
+      from.classList.remove("active");
+      from.style.pointerEvents = "";
+      from.style.zIndex = "";
+    }
+
+    state.current = to;
+    target.style.zIndex = "";
+    screenEl.dataset.page = to;
+    updateScrollCue(to);
+    window.setTimeout(() => { target.style.zIndex = ""; }, 380);
+
+    const heading = target.querySelector("h1");
+    if (heading) heading.setAttribute("tabindex", "-1");
+  }
+
+  function goBack() {
+    const destination = backMap[state.current];
+    if (destination) navigate(destination, "back");
+  }
+
+  /* ---------------- scrolling ---------------- */
+  function updateScrollCue(pageName) {
+    const page = pageEls[pageName];
+    const scroll = page && page.querySelector(`[data-scroll="${pageName}"]`);
+    const cue = page && page.querySelector(`[data-cue="${pageName}"]`);
+    if (!scroll || !cue) return;
+    const canScroll = scroll.scrollHeight - scroll.clientHeight > 8;
+    const atTop = scroll.scrollTop <= 3;
+    cue.classList.toggle("show", canScroll && atTop && pageName === state.current);
+    page.classList.toggle("is-scrolled", scroll.scrollTop > 4);
+  }
+
+  Object.entries(pageEls).forEach(([name, page]) => {
+    const scroll = page.querySelector(".scroll");
+    if (!scroll) return;
+    scroll.addEventListener("scroll", () => updateScrollCue(name), { passive: true });
+    if (name === "settings") {
+      // A small nudge makes the scroll affordance obvious without hiding content.
+      window.setTimeout(() => updateScrollCue(name), 500);
+    }
+  });
+
+  function resetSettingsScroll() {
+    const settingsScroll = screenEl.querySelector('[data-scroll="settings"]');
+    if (settingsScroll) settingsScroll.scrollTop = 0;
+    updateScrollCue("settings");
+  }
+
+  /* ---------------- reset flow ---------------- */
+  const resetRow = screenEl.querySelector("[data-reset]");
+  const resetTitle = resetRow.querySelector("[data-reset-title]");
+  const resetSub = resetRow.querySelector("[data-reset-sub]");
+
+  function disarmReset() {
+    state.resetArmed = false;
+    window.clearTimeout(state.resetTimer);
+    resetRow.classList.remove("is-armed");
+    resetTitle.textContent = "重新配网";
+    resetSub.textContent = "清除 Wi-Fi 并重启设备";
+  }
+
+  resetRow.addEventListener("click", () => {
+    if (!state.resetArmed) {
+      state.resetArmed = true;
+      resetRow.classList.add("is-armed");
+      resetTitle.textContent = "再点一次确认";
+      resetSub.textContent = "将清除已保存的 Wi-Fi";
+      showToast("再次点按以确认");
+      tick(true);
+      state.resetTimer = window.setTimeout(disarmReset, 4000);
+      return;
+    }
+
+    disarmReset();
+    showToast("正在重新配网…");
+    tick(true);
+    resetRow.animate(
+      [
+        { transform: "translateX(0)" },
+        { transform: "translateX(-2px)" },
+        { transform: "translateX(2px)" },
+        { transform: "translateX(0)" }
+      ],
+      { duration: 220, easing: "ease-in-out" }
+    );
+  });
+
+  /* ---------------- key sound toggle ---------------- */
+  const toggleRow = screenEl.querySelector('[data-toggle="keySound"]');
+  function toggleKeySound() {
+    state.keySound = !state.keySound;
+    toggleRow.setAttribute("aria-checked", String(state.keySound));
+    showToast(state.keySound ? "按键音已开启" : "按键音已关闭");
+    if (state.keySound) tick(true);
+  }
+  toggleRow.addEventListener("click", toggleKeySound);
+  toggleRow.addEventListener("keydown", (event) => {
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      toggleKeySound();
+    }
+  });
+
+  /* ---------------- navigation events ---------------- */
+  screenEl.querySelectorAll("[data-back]").forEach((button) => {
+    button.addEventListener("click", goBack);
+  });
+
+  screenEl.querySelectorAll("[data-goto]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const destination = button.dataset.goto;
+      navigate(destination, "forward");
+      tick(true);
+    });
+  });
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") goBack();
+  });
+
+  /* ---------------- query parameters for static previews ---------------- */
+  const params = new URLSearchParams(window.location.search);
+  if (params.has("brightness")) {
+    const value = Number(params.get("brightness"));
+    if (Number.isFinite(value)) setLevelValue("brightness", value, { silent: true });
+  }
+  if (params.has("volume")) {
+    const value = Number(params.get("volume"));
+    if (Number.isFinite(value)) setLevelValue("volume", value, { silent: true });
+  }
+
+  const requestedPage = params.get("page");
+  if (requestedPage === "info") {
+    pageEls[state.current].classList.remove("active");
+    pageEls[requestedPage].classList.add("active");
+    state.current = requestedPage;
+    screenEl.dataset.page = requestedPage;
+  }
+
+  if (params.has("scroll")) {
+    const amount = Number(params.get("scroll"));
+    window.setTimeout(() => {
+      const scroller = screenEl.querySelector(`[data-scroll="${state.current}"]`);
+      if (scroller && Number.isFinite(amount)) {
+        scroller.scrollTop = amount;
+        updateScrollCue(state.current);
+      }
+    }, 120);
+  }
+
+  window.setTimeout(() => updateScrollCue(state.current), 600);
+
+  // Expose a deliberately small surface for visual QA / screenshots.
+  window.__roundSettings = {
+    go: (page) => navigate(page, "forward"),
+    back: goBack,
+    setBrightness: (value) => setLevelValue("brightness", value),
+    setVolume: (value) => setLevelValue("volume", value),
+    scroll: (page, value) => {
+      const scroller = screenEl.querySelector(`[data-scroll="${page}"]`);
+      if (scroller) scroller.scrollTop = value;
+    },
+    state,
+  };
+})();
+</script>
+</body>
+</html>
