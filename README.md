@@ -96,6 +96,14 @@ docs/            设备操作手册
 
 ## 🔧 编译与烧录
 
+**不想搭编译环境？** 仓库 `build/` 里带着编译好的最新固件，只要有 `esptool` 就能刷：
+
+```bash
+tools/flash_release.sh --models      # 新设备：固件 + 唤醒词模型一起写
+```
+
+完整步骤、手动 esptool 命令、Windows 用法和常见问题见 **[docs/flashing-new-device.md](docs/flashing-new-device.md)**。
+
 编译环境：Arduino IDE 2（自带 arduino-cli 1.5.1）、esp32 core 3.3.10、LVGL 9.3.0
 （`~/Documents/Arduino/libraries/lvgl` 及并列的 `lv_conf.h`）。
 
