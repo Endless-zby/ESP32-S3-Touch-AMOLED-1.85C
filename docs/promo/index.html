@@ -22,9 +22,14 @@
   #top.hidden{opacity:0;pointer-events:none}
   #hint{position:fixed;top:14px;left:18px;font-size:12px;opacity:.55;transition:opacity .3s}
   #hint.hidden{opacity:0}
+  #loading{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#05070f;z-index:10;transition:opacity .5s}
+  #loading.done{opacity:0;pointer-events:none}
+  #loading b{font-size:22px;font-weight:700;letter-spacing:.04em}
+  #bar{width:260px;height:6px;background:rgba(255,255,255,.12);border-radius:4px;overflow:hidden}#bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#22d3ee,#8b5cf6)}
 </style>
 </head>
 <body>
+<div id="loading"><b>小安 · 酒店客房智能语音话机</b><div id="bar"><i></i></div><small id="ltxt" style="opacity:.6">正在加载场景…</small></div>
 <div id="stage"></div>
 <div id="hint">空格 播放/暂停 · ← → 切换幕 · R 重播 · 录制会从头播放并导出 webm</div>
 <div id="top"><button class="btn rec" id="rec">● 录制</button></div>
@@ -39,9 +44,11 @@
 
 <script type="module">
 import * as THREE from './three.module.min.js';
+import { RGBELoader } from './assets/jsm/loaders/RGBELoader.js';
+import { GLTFLoader } from './assets/jsm/loaders/GLTFLoader.js';
 
 // ============================================================================
-//  Script — every scene: duration, title, timed captions, camera keyframes
+//  Script
 // ============================================================================
 const SCENES = [
   { id:'intro', dur:7, title:'小安 · 酒店客房智能语音话机',
@@ -49,23 +56,23 @@ const SCENES = [
     cam:[{t:0,pos:[0,1.2,5.2],look:[0,0.45,0]},{t:1,pos:[1.6,1.0,4.2],look:[0,0.45,0]}] },
   { id:'room', dur:8, title:'就在床头',
     captions:[{t:0.5,text:'它就放在床头柜上，一块圆形触摸屏，没有一个按钮需要学。'}],
-    cam:[{t:0,pos:[6.5,3.6,7.5],look:[0,0.8,0]},{t:1,pos:[2.4,1.7,3.6],look:[0.2,0.75,0]}] },
+    cam:[{t:0,pos:[1.2,1.5,-1.6],look:[-1.2,0.75,0.95]},{t:1,pos:[1.15,1.4,-1.1],look:[-1.3,0.72,0.95]}] },
   { id:'wake', dur:8, title:'一句话唤醒',
     captions:[{t:0.3,text:'只要说一句「你好小安」，它就醒了。'},{t:4.2,text:'唤醒词在设备本地识别，离线也听得见。'}],
-    cam:[{t:0,pos:[2.4,1.7,3.6],look:[0.2,0.75,0]},{t:1,pos:[-3.2,1.9,1.5],look:[-0.4,1.25,-1.5]}] },
+    cam:[{t:0,pos:[1.15,1.4,-1.1],look:[-1.3,0.72,0.95]},{t:1,pos:[1.0,1.35,-0.95],look:[-1.35,0.72,0.95]}] },
   { id:'chat', dur:13, title:'持续对话 · 动嘴控制设备',
     captions:[{t:0.3,text:'唤醒后可以一直聊：退房时间、附近美食、今天天气……'},
               {t:5.0,text:'也能直接动嘴控制设备：调亮度、调音量、查时间，说完就生效。'},
               {t:9.6,text:'语音直连云端大模型 Qwen Realtime，中间没有中转。'}],
-    cam:[{t:0,pos:[-3.2,1.9,1.5],look:[-0.4,1.25,-1.5]},{t:1,pos:[-2.7,1.65,1.0],look:[-0.1,1.2,-1.5]}] },
+    cam:[{t:0,pos:[1.0,1.35,-0.95],look:[-1.35,0.72,0.95]},{t:1,pos:[1.1,1.45,-1.3],look:[-1.25,0.78,0.95]}] },
   { id:'call', dur:12, title:'一句话呼叫前台',
     captions:[{t:0.3,text:'有事找前台？一句「帮我打给前台」，小安帮你拨过去。'},
               {t:5.2,text:'电话那头先由云端 AI 客服接听：送水、报修、问政策，秒级响应、24 小时在线。'}],
-    cam:[{t:0,pos:[-2.7,1.65,1.0],look:[-0.1,1.2,-1.5]},{t:0.45,pos:[3.0,3.9,5.8],look:[-0.2,2.7,-0.3]},{t:1,pos:[2.4,4.0,5.3],look:[-0.1,2.85,0.0]}] },
+    cam:[{t:0,pos:[1.1,1.45,-1.3],look:[-1.25,0.78,0.95]},{t:0.45,pos:[1.0,1.55,-1.7],look:[-0.9,1.55,1.6]},{t:1,pos:[0.9,1.6,-1.9],look:[-0.9,1.6,1.7]}] },
   { id:'handoff', dur:12, title:'AI 搞不定？自动转人工',
     captions:[{t:0.3,text:'遇到 AI 处理不了的事，系统自动把电话转给人工坐席。'},
               {t:5.5,text:'坐席接起前，客人刚才和 AI 说过的每一句话已经在屏幕上，不用再问一遍。'}],
-    cam:[{t:0,pos:[2.4,4.0,5.3],look:[-0.1,2.85,0.0]},{t:1,pos:[-2.0,4.1,5.4],look:[0.7,2.9,0.2]}] },
+    cam:[{t:0,pos:[0.9,1.6,-1.9],look:[-0.9,1.6,1.7]},{t:1,pos:[0.2,1.65,-2.0],look:[-1.0,1.6,1.7]}] },
   { id:'benefits', dur:14, title:'它带来什么',
     captions:[{t:0.3,text:'对客人：免学习、免等待、全天候。'},
               {t:5.0,text:'对酒店：前台减负、AI 先接人工兜底、通话全程留痕、云端统一管理。'},
@@ -81,34 +88,28 @@ const SCENES = [
     cam:[{t:0,pos:[0,1.0,4.6],look:[0,0.45,0]},{t:1,pos:[-1.2,1.1,4.2],look:[0,0.45,0]}] },
 ];
 const TOTAL = SCENES.reduce((a,s)=>a+s.dur,0);
-let t0 = 0; SCENES.forEach(s=>{ s.start=t0; t0+=s.dur; });
+{ let t0=0; SCENES.forEach(s=>{ s.start=t0; t0+=s.dur; }); }
 
 // ============================================================================
-//  Renderer / cameras
+//  Renderer
 // ============================================================================
 const Q = new URLSearchParams(location.search);
-const LOWQ = Q.get('q') === 'low';   // ?q=low: no shadows, 1280x720 — for weak GPUs / quick preview
+const LOWQ = Q.get('q') === 'low';
 const REC_W = +Q.get('w') || (LOWQ?1280:1920), REC_H = +Q.get('h') || (LOWQ?720:1080);
-const renderer = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true, alpha:false });
+const renderer = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true });
 renderer.setPixelRatio(1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = !LOWQ;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.autoClear = false;
 document.getElementById('stage').appendChild(renderer.domElement);
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x070a16);
-scene.fog = new THREE.FogExp2(0x070a16, 0.028);
-const camera = new THREE.PerspectiveCamera(42, 16/9, 0.1, 100);
-
+const camera = new THREE.PerspectiveCamera(50, 16/9, 0.05, 200);
 const hud = new THREE.Scene();
 const hudCam = new THREE.OrthographicCamera(-1,1,1,-1,-10,10);
-
 function layout(){
-  // 16:9 canvas that fits the window; internal resolution fixed at REC_W×REC_H
   const ww = window.innerWidth, wh = window.innerHeight;
   let w = ww, h = ww*9/16; if (h > wh) { h = wh; w = wh*16/9; }
   renderer.setSize(REC_W, REC_H, false);
@@ -118,18 +119,22 @@ function layout(){
 }
 window.addEventListener('resize', layout); layout();
 
+// Two worlds: the photographed hotel room, and a dark presentation stage.
+const room = new THREE.Scene();
+const stageScene = new THREE.Scene(); stageScene.background = new THREE.Color(0x070a16); stageScene.fog = new THREE.FogExp2(0x070a16, 0.035);
+let active = room;
+
 // ============================================================================
 //  Helpers
 // ============================================================================
 const ease = t => t<0?0:t>1?1:(t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2);
 const clamp01 = v => Math.max(0,Math.min(1,v));
 const lerp = (a,b,t)=>a+(b-a)*t;
-const V3 = (a)=>new THREE.Vector3(a[0],a[1],a[2]);
+const V3 = a=>new THREE.Vector3(a[0],a[1],a[2]);
 
 function textTexture({text, size=30, weight=600, color='#f3f6ff', bg=null, pad=20, maxW=1100, lineH=1.4, radius=20, align='center', shadow=true, scale=2}){
   const font = `${weight} ${size}px "PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif`;
   const m = document.createElement('canvas').getContext('2d'); m.font = font;
-  // wrap per character (CJK) / per word (latin)
   const lines=[]; for (const para of String(text).split('\n')) {
     let line=''; const tokens = para.match(/[A-Za-z0-9_.:/\-]+|\s|./g) || [];
     for (const tk of tokens) { if (m.measureText(line+tk).width > maxW && line) { lines.push(line); line = tk.trim()? tk : ''; } else line += tk; }
@@ -147,368 +152,386 @@ function textTexture({text, size=30, weight=600, color='#f3f6ff', bg=null, pad=2
   return { tex, w, h };
 }
 function rr(g,x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
-
-// HUD text plane in pixels
 function hudText(opts){
   const {tex,w,h} = textTexture(opts);
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w,h), new THREE.MeshBasicMaterial({map:tex, transparent:true, opacity:0, depthTest:false}));
   mesh.renderOrder = 10; mesh.userData.size=[w,h]; hud.add(mesh); return mesh;
 }
-// world-space sprite label
 function sprite(opts, k=0.0032){
   const {tex,w,h} = textTexture(opts);
-  const depthTest = opts.depthTest === true;   // default: draw on top (labels); cards pass depthTest:true to be occluded normally
+  const depthTest = opts.depthTest === true;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({map:tex, transparent:true, opacity:0, depthTest}));
   s.scale.set(w*k, h*k, 1); s.renderOrder = depthTest?0:5; s.userData.size=[w,h]; return s;
 }
 const fades = new Set();
 function fadeTo(obj, to, dur=0.5, delay=0){ fades.add({obj,from:obj.material.opacity,to,dur,delay,t:0}); }
 function stepFades(dt){ for (const f of fades){ f.t+=dt; const u=clamp01((f.t-f.delay)/f.dur); if(f.t>=f.delay) f.obj.material.opacity = lerp(f.from,f.to,ease(u)); if(u>=1) fades.delete(f);} }
+const pbr = (c,o={})=>new THREE.MeshPhysicalMaterial(Object.assign({color:c, roughness:.6, metalness:0}, o));
 
 // ============================================================================
-//  World: hotel room
+//  The photographed room (HDRI from Poly Haven "hotel_room", CC0)
+//  Camera sits near the pano centre (~1.5 m height). Bed + nightstand lie at
+//  yaw BED_DIR; 3D objects are placed along that direction so they sit on
+//  the real furniture in the photo.
 // ============================================================================
-const room = new THREE.Group(); scene.add(room);
-const mat = (c, o={}) => new THREE.MeshStandardMaterial(Object.assign({color:c, roughness:.85, metalness:.05}, o));
+const PANO_YAW = 0.0;
+// Measured from the panorama: pano camera stands at the foot of the bed looking +Z.
+// Right-hand bedside ledge (lamp + bottle) is at yaw -0.89, 2.35 m away, 0.65 m high.
+const LEDGE_POS = new THREE.Vector3(-1.70, 0.65, 1.37);   // device goes here
+const BED_EDGE  = new THREE.Vector3(-0.35, 0.55, -0.10);   // seat point on the right mattress edge, nearer the foot of the bed
+const BED_DIR   = Math.atan2(LEDGE_POS.x, LEDGE_POS.z);   // yaw toward the ledge
+const shadowFloor = new THREE.Mesh(new THREE.PlaneGeometry(14,14), new THREE.ShadowMaterial({opacity:0.35}));
+shadowFloor.rotation.x = -Math.PI/2; shadowFloor.receiveShadow = true; room.add(shadowFloor);
+const NS_POS = LEDGE_POS.clone();
+const nsTop = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.02,0.45), new THREE.ShadowMaterial({opacity:0.4})); nsTop.position.copy(NS_POS).add(new THREE.Vector3(0,-0.01,0)); nsTop.receiveShadow=true; room.add(nsTop);
 
-// floor + walls
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(14,14), mat(0x3b2f2a,{roughness:.9})); floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; room.add(floor);
-const rug = new THREE.Mesh(new THREE.CircleGeometry(2.6,48), mat(0x6b4e3d)); rug.rotation.x=-Math.PI/2; rug.position.set(0.5,0.005,1.6); rug.receiveShadow=true; room.add(rug);
-const wallBack = new THREE.Mesh(new THREE.PlaneGeometry(14,6), mat(0xe9dccb,{roughness:1})); wallBack.position.set(0,3,-3.2); wallBack.receiveShadow=true; room.add(wallBack);
-const wallLeft = new THREE.Mesh(new THREE.PlaneGeometry(14,6), mat(0xdfd2c1,{roughness:1})); wallLeft.rotation.y=Math.PI/2; wallLeft.position.set(-4.2,3,0); room.add(wallLeft);
-// headboard panel
-const headboard = new THREE.Mesh(new THREE.BoxGeometry(3.4,1.5,0.12), mat(0x8a6a52)); headboard.position.set(1.0,1.0,-3.1); headboard.castShadow=true; room.add(headboard);
-// window with warm daylight
-const win = new THREE.Mesh(new THREE.PlaneGeometry(2.2,1.7), new THREE.MeshBasicMaterial({color:0xbfe3ff})); win.rotation.y=Math.PI/2; win.position.set(-4.18,2.4,0.6); room.add(win);
-const winFrame = new THREE.Mesh(new THREE.BoxGeometry(0.08,1.9,2.4), mat(0xf5f1ea)); winFrame.position.set(-4.17,2.4,0.6); room.add(winFrame);
-const curtainL = new THREE.Mesh(new THREE.BoxGeometry(0.1,2.6,0.5), mat(0xb9c7d8,{roughness:1})); curtainL.position.set(-4.1,2.3,-0.85); room.add(curtainL);
-const curtainR = curtainL.clone(); curtainR.position.z=2.05; room.add(curtainR);
-// picture
-const pic = new THREE.Mesh(new THREE.BoxGeometry(1.1,0.75,0.04), mat(0x2b3a55)); pic.position.set(-1.6,2.5,-3.15); room.add(pic);
-const picFrame = new THREE.Mesh(new THREE.BoxGeometry(1.2,0.85,0.03), mat(0xf7f3ec)); picFrame.position.set(-1.6,2.5,-3.17); room.add(picFrame);
+// ---- the device (PBR) ---------------------------------------------------
+function makeDevice(){
+  const g = new THREE.Group();
+  const shell = pbr(0x14161c, {metalness:.85, roughness:.28, clearcoat:.6, clearcoatRoughness:.2});
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.105,0.105,0.055,96), shell);
+  body.rotation.x = Math.PI/2 - 0.42; body.position.y = 0.115; body.castShadow=true; g.add(body);
+  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.11,0.075,0.075), shell); foot.position.set(0,0.037,0.012); foot.castShadow=true; g.add(foot);
+  const bezel = new THREE.Mesh(new THREE.RingGeometry(0.088,0.1,96), pbr(0x0a0b0f,{metalness:.9,roughness:.15})); bezel.position.set(0,0.115,0); bezel.rotation.x=-0.42; bezel.translateZ(0.0281); g.add(bezel);
+  const glassMat = new THREE.MeshPhysicalMaterial({color:0x05070e, roughness:.08, metalness:0, clearcoat:1, clearcoatRoughness:.05, emissive:0x0a1230, emissiveIntensity:0.5});
+  const screen = new THREE.Mesh(new THREE.CircleGeometry(0.088,96), glassMat); screen.position.set(0,0.115,0); screen.rotation.x=-0.42; screen.translateZ(0.0285); g.add(screen);
+  const eyeMat = new THREE.MeshBasicMaterial({color:0x22d3ee, transparent:true, opacity:0});
+  const eyes = new THREE.Group(); screen.add(eyes);
+  for (const dx of [-0.026,0.026]) { const e = new THREE.Mesh(new THREE.CapsuleGeometry(0.0065,0.016,4,12), eyeMat); e.position.set(dx,0.006,0.001); eyes.add(e); }
+  const ringMat = new THREE.MeshBasicMaterial({color:0x8b5cf6, transparent:true, opacity:0, side:THREE.DoubleSide});
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.071,0.081,96), ringMat); ring.position.z=0.0012; screen.add(ring);
+  const glyph = sprite({text:'📞', size:60, shadow:false}, 0.0012); glyph.position.set(0,0,0.006); screen.add(glyph);
+  const glow = new THREE.PointLight(0x8b5cf6, 0, 0.6, 2); glow.position.set(0,0.13,0.12); g.add(glow);
+  g.userData = { screen, eyes, ring, glyph, glow };
+  return g;
+}
+const device = makeDevice(); device.position.copy(NS_POS); device.rotation.y = Math.atan2(BED_EDGE.x-NS_POS.x, BED_EDGE.z-NS_POS.z); room.add(device);   // screen faces the guest
 
-// bed
-const bedBase = new THREE.Mesh(new THREE.BoxGeometry(3.2,0.45,2.6), mat(0x5a4636)); bedBase.position.set(1.0,0.225,-1.7); bedBase.castShadow=bedBase.receiveShadow=true; room.add(bedBase);
-const mattress = new THREE.Mesh(new THREE.BoxGeometry(3.1,0.35,2.5), mat(0xf4efe6,{roughness:.95})); mattress.position.set(1.0,0.62,-1.7); mattress.castShadow=mattress.receiveShadow=true; room.add(mattress);
-const blanket = new THREE.Mesh(new THREE.BoxGeometry(3.12,0.14,1.6), mat(0x8fb3c9,{roughness:.9})); blanket.position.set(1.0,0.83,-1.2); blanket.castShadow=true; room.add(blanket);
-for (const dx of [-0.75,0.75]) { const p = new THREE.Mesh(new THREE.BoxGeometry(1.2,0.22,0.6), mat(0xffffff,{roughness:1})); p.position.set(1.0+dx,0.9,-2.55); p.castShadow=true; room.add(p); }
+const lampLight = new THREE.PointLight(0xffb86b, 1.6, 3.5, 1.8); lampLight.position.copy(NS_POS).add(new THREE.Vector3(-0.25,0.55,0.25)); lampLight.castShadow=!LOWQ; lampLight.shadow.mapSize.set(1024,1024); lampLight.shadow.bias=-0.002; room.add(lampLight);
+const keyFill = new THREE.DirectionalLight(0xfff2e4, 0.6); keyFill.position.set(-2,3,2); keyFill.castShadow=!LOWQ; keyFill.shadow.mapSize.set(2048,2048); keyFill.shadow.camera.left=-4; keyFill.shadow.camera.right=4; keyFill.shadow.camera.top=4; keyFill.shadow.camera.bottom=-4; keyFill.shadow.bias=-0.001; room.add(keyFill);
 
-// nightstand + lamp + device
-const stand = new THREE.Mesh(new THREE.BoxGeometry(1.0,0.75,0.8), mat(0x6c5340)); stand.position.set(-1.35,0.375,-2.3); stand.castShadow=stand.receiveShadow=true; room.add(stand);
-const drawer = new THREE.Mesh(new THREE.BoxGeometry(0.86,0.22,0.02), mat(0x5a432f)); drawer.position.set(-1.35,0.45,-1.89); room.add(drawer);
-const lamp = new THREE.Group(); lamp.position.set(-1.65,0.75,-2.45); room.add(lamp);
-{ const base = new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.14,0.04,32), mat(0x2a2a2e,{metalness:.5,roughness:.4})); base.position.set(0,0.02,0); lamp.add(base); }
-{ const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.5,16), mat(0x2a2a2e,{metalness:.5,roughness:.4})); pole.position.set(0,0.28,0); lamp.add(pole); }
-const shadeMat = new THREE.MeshStandardMaterial({color:0xffe6bf, emissive:0xffb86b, emissiveIntensity:0.9, roughness:1, side:THREE.DoubleSide});
-const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.24,0.26,32,1,true), shadeMat); shade.position.y=0.62; lamp.add(shade);
-const lampLight = new THREE.PointLight(0xffb86b, 2.6, 6, 1.6); lampLight.position.set(0,0.6,0); lampLight.castShadow=true; lampLight.shadow.mapSize.set(1024,1024); lamp.add(lampLight);
-
-// --- the device ---------------------------------------------------------------
-const device = new THREE.Group(); room.add(device);
-const DEV_POS = new THREE.Vector3(-1.05,0.75,-2.15);
-device.position.copy(DEV_POS);
-const body = new THREE.Mesh(new THREE.CylinderGeometry(0.33,0.33,0.16,64), mat(0x15181f,{metalness:.6,roughness:.35}));
-body.rotation.x = Math.PI/2 - 0.35; body.position.y=0.36; body.castShadow=true; device.add(body);
-const wedge = new THREE.Mesh(new THREE.BoxGeometry(0.34,0.26,0.22), mat(0x15181f,{metalness:.6,roughness:.35})); wedge.position.set(0,0.13,0.02); wedge.castShadow=true; device.add(wedge);
-const screenMat = new THREE.MeshStandardMaterial({color:0x05070e, emissive:0x0a1230, emissiveIntensity:0.6, roughness:.25, metalness:.1});
-const screen = new THREE.Mesh(new THREE.CircleGeometry(0.29,64), screenMat); screen.position.set(0,0.36,0.085); screen.rotation.x=-0.35; screen.position.y += 0.03; screen.position.z += 0.0; device.add(screen);
-// face: two eyes
-const eyeMat = new THREE.MeshBasicMaterial({color:0x22d3ee, transparent:true, opacity:0});
-const eyes = new THREE.Group(); screen.add(eyes);
-for (const dx of [-0.085,0.085]) { const e = new THREE.Mesh(new THREE.CapsuleGeometry(0.022,0.05,4,12), eyeMat); e.position.set(dx,0.02,0.003); eyes.add(e); }
-// purple breathing ring
-const ringMat = new THREE.MeshBasicMaterial({color:0x8b5cf6, transparent:true, opacity:0, side:THREE.DoubleSide});
-const ring = new THREE.Mesh(new THREE.RingGeometry(0.235,0.265,96), ringMat); ring.position.z=0.004; screen.add(ring);
-// phone glyph
-const phoneGlyph = sprite({text:'📞', size:60, shadow:false}, 0.004); phoneGlyph.position.set(0,0,0.02); screen.add(phoneGlyph);
-const screenGlow = new THREE.PointLight(0x8b5cf6, 0, 1.5, 2); screenGlow.position.set(0,0.4,0.3); device.add(screenGlow);
-
-// --- guest (stylised) -------------------------------------------------------------
-const guest = new THREE.Group(); guest.position.set(0.6,0.2,-0.5); room.add(guest);   // seated on the bed edge, facing the nightstand
-const skin = mat(0xf1c9a5,{roughness:.8}), cloth = mat(0x4466aa,{roughness:.9}), pants = mat(0x2f3542);
-const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.22,0.45,6,16), cloth); torso.position.set(0,1.05,0); torso.castShadow=true; guest.add(torso);
-const head = new THREE.Mesh(new THREE.SphereGeometry(0.19,32,24), skin); head.position.set(0,1.58,0); head.castShadow=true; guest.add(head);
-const hair = new THREE.Mesh(new THREE.SphereGeometry(0.2,32,24,0,Math.PI*2,0,Math.PI*0.55), mat(0x3a2a22)); hair.position.set(0,1.6,0); guest.add(hair);
-for (const dx of [-0.26,0.26]) { const a = new THREE.Mesh(new THREE.CapsuleGeometry(0.07,0.42,4,12), cloth); a.position.set(dx,1.05,0.05); a.rotation.z = dx>0?-0.25:0.25; a.castShadow=true; guest.add(a); }
-// (legs omitted: the blanket edge reads as the lap from the chosen camera angles)
-guest.rotation.y = -2.35;  // front (+z) turned towards -x/-z: the nightstand
-
-// --- sound waves guest -> device ------------------------------------------------
-const waves = []; const waveMat = new THREE.MeshBasicMaterial({color:0x22d3ee, transparent:true, opacity:0.0, side:THREE.DoubleSide});
-for (let i=0;i<4;i++){ const w = new THREE.Mesh(new THREE.RingGeometry(0.08,0.1,48), waveMat.clone()); w.visible=false; room.add(w); waves.push(w); }
-let waveClock = -1; const waveFrom = new THREE.Vector3(0.5,1.75,-0.6), waveDir = new THREE.Vector3();
-function waveBurst(){ waveClock = 0; }
-function stepWaves(dt){
-  if (waveClock<0) return; waveClock += dt;
-  waveDir.copy(DEV_POS).add(new THREE.Vector3(0,0.45,0)).sub(waveFrom);
-  const len = waveDir.length(); waveDir.normalize();
-  waves.forEach((w,i)=>{ const u = (waveClock - i*0.22)/1.1; if (u<0||u>1){ w.visible=false; return; }
-    w.visible=true; w.position.copy(waveFrom).addScaledVector(waveDir, u*len); w.lookAt(waveFrom); const s = 1+u*5; w.scale.set(s,s,1); w.material.opacity = 0.9*(1-u); });
-  if (waveClock > 2.0) { waveClock = -1; waves.forEach(w=>w.visible=false); }
+// ---- the guest: rigged human (three.js Xbot, Mixamo rig) -----------------
+let guest = null, mixer = null, clips = {}, currentAction = null, headBone = null, seat = null;
+// Seated pose, applied after the mixer each frame. Instead of guessing bone
+// axes, we steer each bone so that its *measured* axis points where a seated
+// person's does, in world space: thighs along the body's forward, shins
+// straight down, upper arms down, forearms forward onto the lap.
+const _q = new THREE.Quaternion(), _qi = new THREE.Quaternion(), _from = new THREE.Vector3(), _to = new THREE.Vector3(), _pq = new THREE.Quaternion();
+function aimBone(bone, localAxis, worldTarget, mix=1){
+  if (!bone) return;
+  bone.updateWorldMatrix(true,false);
+  bone.getWorldQuaternion(_q);
+  _from.copy(localAxis).applyQuaternion(_q).normalize();
+  _to.copy(worldTarget).normalize();
+  _qi.setFromUnitVectors(_from,_to);            // world-space rotation needed
+  // convert to the bone's parent space and apply on the local quaternion
+  bone.parent.getWorldQuaternion(_pq);
+  const corr = _pq.clone().invert().multiply(_qi).multiply(_pq);
+  if (mix<1) corr.slerp(new THREE.Quaternion(), 1-mix);
+  bone.quaternion.premultiply(corr);
+}
+const DOWN = new THREE.Vector3(0,-1,0);
+// A bone's own "child direction" (the axis that runs down the limb) is the
+// direction to its first child in its local frame. Mixamo rigs are not all +Y,
+// so measure it instead of assuming.
+const _axisCache = new Map();
+function limbAxis(bone){ if (!bone) return null; let a=_axisCache.get(bone); if (a) return a; const child = bone.children.find(c=>c.isBone||c.type==='Bone'||/mixamorig/.test(c.name)); if (!child) return null; a = child.position.clone().normalize(); _axisCache.set(bone,a); return a; }
+function applySeated(){
+  if (!seat || !seat.hips || !guest) return;
+  // Pin the pelvis to the seat point, independent of the clip's root motion
+  // (idle / agree move the hips a little): hips world Y = mattress top + ~pelvis half-height.
+  guest.updateWorldMatrix(true,false);
+  const hipsW = seat.hips.getWorldPosition(new THREE.Vector3());
+  const target = new THREE.Vector3(GUEST_POS.x, GUEST_POS.y + 0.10, GUEST_POS.z);
+  const delta = target.sub(hipsW);
+  guest.position.add(delta);               // move the whole figure so the hips land on the seat
+  const fwd = new THREE.Vector3(0,0,1).applyQuaternion(guest.quaternion).normalize();
+  const thighDir = fwd.clone().multiplyScalar(0.92).addScaledVector(DOWN,0.22).normalize();
+  const armDir   = DOWN.clone().addScaledVector(fwd,0.15).normalize();
+  const foreDir  = fwd.clone().addScaledVector(DOWN,0.30).normalize();
+  for (const [b,dir] of [[seat.lUp,thighDir],[seat.rUp,thighDir],[seat.lLeg,DOWN],[seat.rLeg,DOWN],[seat.lArm,armDir],[seat.rArm,armDir],[seat.lFore,foreDir],[seat.rFore,foreDir]]) {
+    const ax = limbAxis(b); if (ax) aimBone(b, ax, dir);
+  }
+  // head looks at the device (so the face reads even with the body turned to camera)
+  if (headBone && seat.spine) { const hp=headBone.getWorldPosition(new THREE.Vector3()); const look=device.position.clone().add(new THREE.Vector3(0,0.1,0)).sub(hp).normalize(); const hAx = limbAxis(headBone) || new THREE.Vector3(0,1,0); /* head axis points up: aim its forward (local -Z for mixamo heads) */ const fwdLocal = new THREE.Vector3(0,0,1); aimBone(headBone, fwdLocal, look, 0.7); }
+  // small forward lean of the torso toward the device
+  _qi.setFromAxisAngle(new THREE.Vector3(1,0,0).applyQuaternion(guest.quaternion), 0.08); seat.spine.quaternion.premultiply(seat.spine.parent.getWorldQuaternion(_pq).invert().multiply(_qi).multiply(_pq.clone().invert()));
+}
+const GUEST_POS = BED_EDGE.clone();
+function playClip(name, fade=0.35, loop=true){
+  const a = clips[name]; if (!a || !mixer) return;
+  if (currentAction && currentAction !== a) currentAction.fadeOut(fade);
+  a.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(fade).play();
+  a.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce, Infinity); a.clampWhenFinished = !loop;
+  currentAction = a;
+}
+function dressGuest(obj){
+  const skin = new THREE.Color(0xe8c3a2), shirt = new THREE.Color(0x2f4f7f), pants = new THREE.Color(0x2b2f3a), shoes = new THREE.Color(0x1a1a1f);
+  obj.traverse(o=>{
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    const pos = o.geometry.attributes.position; const col = new Float32Array(pos.count*3);
+    // bind-pose vertex positions are in metres here: 0..1.79 (T-pose, arms along x)
+    for (let i=0;i<pos.count;i++){ const y = pos.getY(i); const x = Math.abs(pos.getX(i));
+      let c = y > 1.50 ? skin : y > 0.97 ? shirt : y > 0.08 ? pants : shoes;
+      if (x > 0.60 && y > 1.30 && y < 1.50) c = skin;      // hands (T-pose arms at shoulder height)
+      if (x > 0.22 && x <= 0.60 && y > 1.30 && y < 1.50) c = shirt; // sleeves
+      col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b; }
+    o.geometry.setAttribute('color', new THREE.BufferAttribute(col,3));
+    o.material = new THREE.MeshPhysicalMaterial({color:0xffffff, roughness:.78, metalness:0, vertexColors:true, sheen:.25, sheenColor:new THREE.Color(0xffe0d0)});
+  });
 }
 
-// --- speech bubbles ---------------------------------------------------------------
-const bubbles = [];
-function bubble(text, who, pos, k=0.0030){
+// ---- sound waves guest -> device ---------------------------------------------
+const waves=[]; for (let i=0;i<4;i++){ const w = new THREE.Mesh(new THREE.RingGeometry(0.03,0.04,48), new THREE.MeshBasicMaterial({color:0x22d3ee, transparent:true, opacity:0, side:THREE.DoubleSide, depthTest:false})); w.renderOrder=6; w.visible=false; room.add(w); waves.push(w); }
+let waveClock=-1; const waveFrom = new THREE.Vector3(), waveDir = new THREE.Vector3();
+function waveBurst(){ waveClock=0; if (headBone) headBone.getWorldPosition(waveFrom); else waveFrom.copy(GUEST_POS).add(new THREE.Vector3(0,1.55,0)); }
+function stepWaves(dt){ if (waveClock<0) return; waveClock+=dt; const to = device.position.clone().add(new THREE.Vector3(0,0.12,0)); waveDir.copy(to).sub(waveFrom); const len=waveDir.length(); waveDir.normalize();
+  waves.forEach((w,i)=>{ const u=(waveClock-i*0.22)/1.1; if(u<0||u>1){w.visible=false;return;} w.visible=true; w.position.copy(waveFrom).addScaledVector(waveDir,u*len); w.lookAt(waveFrom); const s=1+u*4; w.scale.set(s,s,1); w.material.opacity=0.9*(1-u); });
+  if (waveClock>2.0){ waveClock=-1; waves.forEach(w=>w.visible=false); } }
+
+// ---- speech bubbles ---------------------------------------------------------------
+const bubbles=[];
+function bubble(text, who, pos, k=0.0022){
   const isGuest = who==='guest';
-  const s = sprite({text, size:30, weight:600, color: isGuest?'#0b1020':'#f8f5ff', bg: isGuest?'rgba(255,255,255,.95)':'rgba(109,74,232,.95)', pad:18, radius:22, maxW:620}, k);
-  s.position.copy(pos); s.center.set(0.5, 0); room.add(s); bubbles.push(s); return s;
+  const s = sprite({text, size:30, weight:600, color:isGuest?'#0b1020':'#f8f5ff', bg:isGuest?'rgba(255,255,255,.95)':'rgba(109,74,232,.95)', pad:18, radius:22, maxW:620}, k);
+  s.position.copy(pos); s.center.set(0.5,0); active.add(s); bubbles.push(s); return s;
 }
-function clearBubbles(){ const old = bubbles.splice(0); old.forEach(b=>fadeTo(b,0,0.3)); setTimeout(()=>old.forEach(b=>room.remove(b)), 400); }
+function clearBubbles(){ const old=bubbles.splice(0); old.forEach(b=>fadeTo(b,0,0.3)); setTimeout(()=>old.forEach(b=>b.parent&&b.parent.remove(b)),400); }
+const guestBubblePos = ()=>{ const p = new THREE.Vector3(); if (headBone) headBone.getWorldPosition(p); else p.copy(GUEST_POS).add(new THREE.Vector3(0,1.6,0)); return p.add(new THREE.Vector3(0,0.22,0)); };
+const devBubblePos = ()=> device.position.clone().add(new THREE.Vector3(0.05,0.5,-0.1));
 
 // ============================================================================
-//  Cloud layer (shown in call / handoff / arch scenes)
+//  Cloud layer (call / handoff) — hovers above the bed inside the real room
 // ============================================================================
-const cloud = new THREE.Group(); cloud.position.set(0,3.2,-0.6); cloud.visible=false; scene.add(cloud);
-const cloudMat = new THREE.MeshStandardMaterial({color:0xffffff, emissive:0x9fb7ff, emissiveIntensity:0.25, roughness:1, transparent:true, opacity:0.92});
-[[0,0,0,1.0],[-1.1,-0.1,0.2,0.75],[1.1,-0.1,0.1,0.8],[-0.5,0.45,-0.1,0.7],[0.6,0.5,0,0.65],[1.9,-0.2,0,0.55],[-1.9,-0.25,0,0.5]].forEach(([x,y,z,r])=>{ const m = new THREE.Mesh(new THREE.SphereGeometry(r,32,24), cloudMat); m.position.set(x,y,z); cloud.add(m); });
-const cloudLabel = sprite({text:'云端 · ai-native-callcenter', size:34, weight:700, color:'#eaf0ff', shadow:true}, 0.0040); cloudLabel.position.set(-1.6,-1.05,1.3); cloud.add(cloudLabel);
-
-function hexNode(color, label, pos){
-  const g = new THREE.Group(); g.position.copy(pos);
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,0.18,6), new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:0.35, roughness:.4, metalness:.3}));
-  m.rotation.x = Math.PI/2; g.add(m);
-  const lb = sprite({text:label, size:28, weight:700, color:'#ffffff'}, 0.0040); lb.position.set(0,-0.66,0.15); g.add(lb); g.userData.label=lb; cloud.add(g); return g;
-}
-const nFS = hexNode(0x22d3ee, 'FreeSWITCH\n话务接入', new THREE.Vector3(-1.6,-0.05,0.9));
-// AI agent: robot head
-const nAI = new THREE.Group(); nAI.position.set(0.1,0.0,1.0); cloud.add(nAI);
-const aiHead = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.5,0.45), new THREE.MeshStandardMaterial({color:0x8b5cf6, emissive:0x5b3fd6, emissiveIntensity:0.5, roughness:.35, metalness:.4})); nAI.add(aiHead);
-for (const dx of [-0.14,0.14]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.06,16,12), new THREE.MeshBasicMaterial({color:0xffffff})); e.position.set(dx,0.05,0.23); nAI.add(e); }
+const cloud = new THREE.Group(); cloud.visible=false; room.add(cloud);
+cloud.position.set(-0.9, 1.95, 1.7); cloud.rotation.y = Math.atan2(1.0-(-0.9), -1.6-1.7); cloud.scale.setScalar(0.62);   // faces the camera at the foot of the bed
+const cloudMat = new THREE.MeshPhysicalMaterial({color:0xffffff, emissive:0x8fa8ff, emissiveIntensity:0.18, roughness:1, transparent:true, opacity:0.9});
+[[0,0,0,1.0],[-1.1,-0.1,0.2,0.75],[1.1,-0.1,0.1,0.8],[-0.5,0.45,-0.1,0.7],[0.6,0.5,0,0.65],[1.9,-0.2,0,0.55],[-1.9,-0.25,0,0.5]].forEach(([x,y,z,r])=>{ const m=new THREE.Mesh(new THREE.SphereGeometry(r,32,24), cloudMat); m.position.set(x,y,z); cloud.add(m); });
+const cloudLabel = sprite({text:'云端 · ai-native-callcenter', size:34, weight:700, color:'#eaf0ff'}, 0.0040); cloudLabel.position.set(-1.6,-1.05,1.3); cloud.add(cloudLabel);
+function hexNode(color,label,pos){ const g=new THREE.Group(); g.position.copy(pos); const m=new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,0.18,6), pbr(color,{emissive:color, emissiveIntensity:.35, roughness:.4, metalness:.3})); m.rotation.x=Math.PI/2; g.add(m); const lb=sprite({text:label,size:28,weight:700,color:'#fff'},0.0040); lb.position.set(0,-0.66,0.15); g.add(lb); g.userData.label=lb; cloud.add(g); return g; }
+const nFS = hexNode(0x22d3ee,'FreeSWITCH\n话务接入', new THREE.Vector3(-1.6,-0.05,0.9));
+const nAI = new THREE.Group(); nAI.position.set(0.1,0,1.0); cloud.add(nAI);
+nAI.add(new THREE.Mesh(new THREE.BoxGeometry(0.6,0.5,0.45), pbr(0x8b5cf6,{emissive:0x5b3fd6, emissiveIntensity:.5, roughness:.35, metalness:.4})));
+for (const dx of [-0.14,0.14]) { const e=new THREE.Mesh(new THREE.SphereGeometry(0.06,16,12), new THREE.MeshBasicMaterial({color:0xffffff})); e.position.set(dx,0.05,0.23); nAI.add(e); }
 const aiAnt = new THREE.Mesh(new THREE.SphereGeometry(0.06,16,12), new THREE.MeshBasicMaterial({color:0x22d3ee})); aiAnt.position.set(0,0.36,0); nAI.add(aiAnt);
-const aiLabel = sprite({text:'AI 客服\n先接听', size:28, weight:700, color:'#ffffff'}, 0.0040); aiLabel.position.set(0,-0.64,0.15); nAI.add(aiLabel);
-// human agent: person with headset
-const nHu = new THREE.Group(); nHu.position.set(1.9,0.0,0.9); cloud.add(nHu);
-const huHead = new THREE.Mesh(new THREE.SphereGeometry(0.2,24,18), mat(0xf1c9a5)); huHead.position.y=0.22; nHu.add(huHead);
-const huBody = new THREE.Mesh(new THREE.CapsuleGeometry(0.22,0.3,6,14), mat(0x22c55e,{roughness:.8})); huBody.position.y=-0.2; nHu.add(huBody);
-const headset = new THREE.Mesh(new THREE.TorusGeometry(0.21,0.025,10,32,Math.PI), mat(0x111827,{metalness:.5})); headset.position.y=0.26; headset.rotation.z=Math.PI; nHu.add(headset);
-const micArm = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.22,8), mat(0x111827)); micArm.position.set(0.18,0.1,0.14); micArm.rotation.z=-0.9; nHu.add(micArm);
-const huLabel = sprite({text:'人工坐席\n兜底', size:28, weight:700, color:'#ffffff'}, 0.0040); huLabel.position.set(0,-0.66,0.15); nHu.add(huLabel);
-// agent screen popup
+const aiLabel = sprite({text:'AI 客服\n先接听',size:28,weight:700,color:'#fff'},0.0040); aiLabel.position.set(0,-0.64,0.15); nAI.add(aiLabel);
+const nHu = new THREE.Group(); nHu.position.set(1.9,0,0.9); cloud.add(nHu);
+{ const h=new THREE.Mesh(new THREE.SphereGeometry(0.2,24,18), pbr(0xe8c3a2)); h.position.y=0.22; nHu.add(h); const b=new THREE.Mesh(new THREE.CapsuleGeometry(0.22,0.3,6,14), pbr(0x22c55e,{roughness:.8})); b.position.y=-0.2; nHu.add(b); const hs=new THREE.Mesh(new THREE.TorusGeometry(0.21,0.025,10,32,Math.PI), pbr(0x111827,{metalness:.5})); hs.position.y=0.26; hs.rotation.z=Math.PI; nHu.add(hs); const arm=new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.22,8), pbr(0x111827)); arm.position.set(0.18,0.1,0.14); arm.rotation.z=-0.9; nHu.add(arm); }
+const huLabel = sprite({text:'人工坐席\n兜底',size:28,weight:700,color:'#fff'},0.0040); huLabel.position.set(0,-0.66,0.15); nHu.add(huLabel);
 const agentScreen = sprite({text:'📋 坐席弹屏（接听前已显示）\n客人：帮我打给前台\n客人：空调没冷气，1208 房\nAI：已记录，转人工\n✓ 对话记录已同步', size:24, weight:600, color:'#0b1020', bg:'rgba(255,255,255,.96)', pad:16, radius:16, maxW:560, align:'left'}, 0.0044);
 agentScreen.center.set(0.5,1); agentScreen.position.set(1.7,-0.95,1.4); cloud.add(agentScreen);
-
-// animated links: device -> FS, FS -> AI, AI -> Human
-function link(fromWorld, toWorld, color){
-  const mid = fromWorld.clone().lerp(toWorld,0.5); mid.y += Math.max(0.6, Math.abs(toWorld.y-fromWorld.y)*0.25);
-  const curve = new THREE.QuadraticBezierCurve3(fromWorld, mid, toWorld);
-  const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 48, 0.022, 8, false), new THREE.MeshBasicMaterial({color, transparent:true, opacity:0}));
-  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.07,16,12), new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0}));
-  const glow = new THREE.PointLight(color, 0, 2.5, 2); dot.add(glow);
-  scene.add(tube); scene.add(dot);
-  const L = { tube, dot, glow, curve, u:0, active:false, speed:0.35 }; links.push(L); return L;
-}
-const links = [];   // every link() result is pushed here so stepLinks animates it
-function stepLinks(dt){ for (const L of links){ if(!L.active) continue; L.u = (L.u + dt*L.speed) % 1; L.curve.getPointAt(L.u, L.dot.position); } }
-function linkOn(L, delay=0){ fadeTo(L.tube,0.9,0.6,delay); fadeTo(L.dot,1,0.3,delay); setTimeout(()=>{L.active=true; L.glow.intensity=1.6;}, delay*1000); }
-function linkOff(L){ fadeTo(L.tube,0,0.4); fadeTo(L.dot,0,0.3); L.active=false; L.glow.intensity=0; }
-const wDevice = DEV_POS.clone().add(new THREE.Vector3(0,0.5,0));
-const wFS = new THREE.Vector3(), wAI = new THREE.Vector3(), wHu = new THREE.Vector3();
-cloud.updateMatrixWorld(true); nFS.getWorldPosition(wFS); nAI.getWorldPosition(wAI); nHu.getWorldPosition(wHu);
-const Ldev = link(wDevice, wFS.clone().add(new THREE.Vector3(0,-0.3,0)), 0x22d3ee);
-const Lai  = link(wFS.clone().add(new THREE.Vector3(0.4,0,0)), wAI.clone().add(new THREE.Vector3(-0.35,0,0)), 0x8b5cf6); Lai.speed=0.6;
-const Lhu  = link(wAI.clone().add(new THREE.Vector3(0.35,0,0)), wHu.clone().add(new THREE.Vector3(-0.3,0,0)), 0x22c55e); Lhu.speed=0.6;
-
-const cloudLabels = [cloudLabel, nFS.userData.label, aiLabel, huLabel];
 const transferTag = sprite({text:'⟲ 流程判定：需要人工 → 转接队列', size:26, weight:700, color:'#fff', bg:'rgba(34,197,94,.92)', pad:14, radius:14}, 0.0038); transferTag.position.set(0.0,-1.25,1.4); cloud.add(transferTag);
+const cloudLabels=[cloudLabel, nFS.userData.label, aiLabel, huLabel];
+
+const links=[];
+function link(from,to,color,parent){
+  const mid = from.clone().lerp(to,0.5); mid.y += Math.max(0.25, Math.abs(to.y-from.y)*0.25);
+  const curve = new THREE.QuadraticBezierCurve3(from,mid,to);
+  const tube = new THREE.Mesh(new THREE.TubeGeometry(curve,48,0.012,8,false), new THREE.MeshBasicMaterial({color, transparent:true, opacity:0}));
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.035,16,12), new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0}));
+  const glow = new THREE.PointLight(color, 0, 1.2, 2); dot.add(glow); parent.add(tube); parent.add(dot);
+  const L={tube,dot,glow,curve,u:0,active:false,speed:0.35}; links.push(L); return L;
+}
+function stepLinks(dt){ for (const L of links){ if(!L.active) continue; L.u=(L.u+dt*L.speed)%1; L.curve.getPointAt(L.u, L.dot.position); } }
+function linkOn(L,delay=0){ fadeTo(L.tube,0.9,0.6,delay); fadeTo(L.dot,1,0.3,delay); setTimeout(()=>{L.active=true; L.glow.intensity=0.8;}, delay*1000); }
+function linkOff(L){ fadeTo(L.tube,0,0.4); fadeTo(L.dot,0,0.3); L.active=false; L.glow.intensity=0; }
+cloud.updateMatrixWorld(true);
+const wFS=new THREE.Vector3(), wAI=new THREE.Vector3(), wHu=new THREE.Vector3(); nFS.getWorldPosition(wFS); nAI.getWorldPosition(wAI); nHu.getWorldPosition(wHu);
+const Ldev = link(device.position.clone().add(new THREE.Vector3(0,0.16,0)), wFS.clone().add(new THREE.Vector3(0,-0.15,0)), 0x22d3ee, room);
+const Lai  = link(wFS.clone().add(new THREE.Vector3(0.17,0,0)), wAI.clone().add(new THREE.Vector3(-0.15,0,0)), 0x8b5cf6, room); Lai.speed=0.6;
+const Lhu  = link(wAI.clone().add(new THREE.Vector3(0.15,0,0)), wHu.clone().add(new THREE.Vector3(-0.13,0,0)), 0x22c55e, room); Lhu.speed=0.6;
 
 // ============================================================================
-//  Benefit cards & architecture (own groups, toggled per scene)
+//  Presentation stage (dark world): intro/outro, benefits, architecture
 // ============================================================================
-const benefits = new THREE.Group(); benefits.visible=false; scene.add(benefits);
-const BEN = [['🗣️','免学习','一句话唤醒，\n不用找按钮、不用看说明书'],['⚡','秒级响应','AI 24 小时在线，\n不排队、不占线'],['🤝','AI 先接 · 人工兜底','搞不定自动转坐席，\n上下文同步不重复'],['🛎️','前台减负','送物、报修、问政策\n先由 AI 消化'],['🗂️','全程留痕','一通电话一份录音、\n一份转录、一条 CDR'],['☁️','云端统一管理','流程、话术、音色\n版本化发布 · 远程升级']];
-BEN.forEach((b,i)=>{ const s = sprite({text:`${b[0]}  ${b[1]}\n${b[2]}`, size:28, weight:600, color:'#f6f8ff', bg:'rgba(20,26,48,.94)', pad:22, radius:22, maxW:420, align:'left', depthTest:true}, 0.0046);
-  // six cards on a ring, offset by 30° so no card ever sits straight in front of the device
-  const a = (i/BEN.length)*Math.PI*2; s.position.set(Math.cos(a)*3.3, 1.45+Math.sin(a*2)*0.25, Math.sin(a)*2.0); s.userData.a=a; benefits.add(s); });   // 0/60/120…°: nothing straight in front of the device
-const benDevice = device.clone(true); benDevice.position.set(0,0.35,0); benDevice.scale.setScalar(1.6); benefits.add(benDevice);
-const benPed = new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.1,0.35,48), mat(0x111827,{metalness:.5,roughness:.4})); benPed.position.y=0.17; benefits.add(benPed);
-{ const k = new THREE.SpotLight(0xffffff, 50, 10, 0.6, 0.6, 1.5); k.position.set(2,4,3); k.target=benPed; benefits.add(k); benefits.add(k.target); const r = new THREE.PointLight(0x8b5cf6, 14, 8, 2); r.position.set(-2.5,1.5,-2); benefits.add(r); const fill = new THREE.PointLight(0xffffff, 10, 9, 2); fill.position.set(0.5,2.2,3.2); benefits.add(fill); const h = new THREE.Mesh(new THREE.RingGeometry(1.4,1.46,96), new THREE.MeshBasicMaterial({color:0x8b5cf6, transparent:true, opacity:.25, side:THREE.DoubleSide})); h.rotation.x=-Math.PI/2; h.position.y=0.02; benefits.add(h); }
+const stageDevice = makeDevice(); stageDevice.scale.setScalar(6.5); stageScene.add(stageDevice);
+const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.4,0.3,64), pbr(0x0f1424,{metalness:.6,roughness:.35})); pedestal.position.y=-0.15; stageScene.add(pedestal);
+const halo = new THREE.Mesh(new THREE.RingGeometry(1.5,1.56,96), new THREE.MeshBasicMaterial({color:0x8b5cf6, transparent:true, opacity:.25, side:THREE.DoubleSide})); halo.rotation.x=-Math.PI/2; halo.position.y=0.02; stageScene.add(halo);
+{ const N=900, arr=new Float32Array(N*3); for(let i=0;i<N;i++){ const r=2.2+Math.random()*5, a=Math.random()*Math.PI*2, y=(Math.random()-0.3)*4; arr[i*3]=Math.cos(a)*r; arr[i*3+1]=y; arr[i*3+2]=Math.sin(a)*r; } const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(arr,3)); stageScene.add(new THREE.Points(g,new THREE.PointsMaterial({color:0x9fb7ff,size:0.035,transparent:true,opacity:.7}))); }
+const stageKey = new THREE.SpotLight(0xffffff, 60, 12, 0.5, 0.5, 1.5); stageKey.position.set(2,4,3); stageKey.castShadow=true; stageScene.add(stageKey);
+const stageRim = new THREE.PointLight(0x8b5cf6, 20, 8, 2); stageRim.position.set(-2.5,1.5,-2); stageScene.add(stageRim);
+stageScene.add(new THREE.AmbientLight(0xffffff, 0.25));
 
-const arch = new THREE.Group(); arch.visible=false; scene.add(arch);
-function archBox(text, pos, color){ const s = sprite({text, size:30, weight:700, color:'#fff', bg:color, pad:24, radius:20, maxW:460}, 0.0046); s.position.copy(pos); arch.add(s); return s; }
-const aDev = archBox('🛎️ 客房话机\nESP32-S3 · 本地唤醒 · AEC', new THREE.Vector3(-3.4,2.25,0), 'rgba(37,99,235,.95)');
-const aLLM = archBox('🧠 Qwen-Audio Realtime\n语音大模型 · Function Calling · 联网搜索', new THREE.Vector3(0.3,3.35,0), 'rgba(139,92,246,.95)');
-const aCC  = archBox('☎️ ai-native-callcenter\nFreeSWITCH · 流程引擎 · AI 坐席', new THREE.Vector3(0.3,1.15,0), 'rgba(6,182,212,.95)');
-const aHu  = archBox('🎧 人工坐席工作台\n弹屏 · 转录 · 一份录音', new THREE.Vector3(3.6,1.15,0), 'rgba(34,197,94,.95)');
-function archLine(a,b,label){ const g = new THREE.BufferGeometry().setFromPoints([a,b]); const l = new THREE.Line(g, new THREE.LineDashedMaterial({color:0xcfd8ff, dashSize:0.18, gapSize:0.12, transparent:true, opacity:.0})); l.computeLineDistances(); l.visible=false; arch.add(l);
-  const s = sprite({text:label, size:24, weight:600, color:'#e9ecff', bg:'rgba(10,14,30,.85)', pad:12, radius:12}, 0.0036); s.position.copy(a).lerp(b,0.5).add(new THREE.Vector3(0,0.3,0)); arch.add(s); return l; }
-const archLines = [ archLine(new THREE.Vector3(-2.1,2.55,0), new THREE.Vector3(-1.2,3.1,0), 'Wi-Fi · WSS'), archLine(new THREE.Vector3(-2.1,1.95,0), new THREE.Vector3(-1.2,1.4,0), 'SIP / RTP · G.711'), archLine(new THREE.Vector3(1.75,1.15,0), new THREE.Vector3(2.2,1.15,0), '转人工 · 上下文同步') ];
-// flowing packets along the three architecture links
-const archLinks = [ link(new THREE.Vector3(-2.1,2.55,0), new THREE.Vector3(-1.2,3.1,0), 0x8b5cf6), link(new THREE.Vector3(-2.1,1.95,0), new THREE.Vector3(-1.2,1.4,0), 0x22d3ee), link(new THREE.Vector3(1.75,1.15,0), new THREE.Vector3(2.2,1.15,0), 0x22c55e) ];
-archLinks.forEach(L=>{ L.speed=0.5; arch.add(L.tube); arch.add(L.dot); });
+const benefits = new THREE.Group(); benefits.visible=false; stageScene.add(benefits);
+const BEN=[['🗣️','免学习','一句话唤醒，\n不用找按钮、不用看说明书'],['⚡','秒级响应','AI 24 小时在线，\n不排队、不占线'],['🤝','AI 先接 · 人工兜底','搞不定自动转坐席，\n上下文同步不重复'],['🛎️','前台减负','送物、报修、问政策\n先由 AI 消化'],['🗂️','全程留痕','一通电话一份录音、\n一份转录、一条 CDR'],['☁️','云端统一管理','流程、话术、音色\n版本化发布 · 远程升级']];
+BEN.forEach((b,i)=>{ const s=sprite({text:`${b[0]}  ${b[1]}\n${b[2]}`, size:28, weight:600, color:'#f6f8ff', bg:'rgba(20,26,48,.94)', pad:22, radius:22, maxW:420, align:'left', depthTest:true}, 0.0046); const a=(i/BEN.length)*Math.PI*2; s.position.set(Math.cos(a)*3.3, 1.45+Math.sin(a*2)*0.25, Math.sin(a)*2.0); s.userData.a=a; benefits.add(s); });
+const benDevice = makeDevice(); benDevice.position.set(0,0.35,0); benDevice.scale.setScalar(4.8); benefits.add(benDevice);
+{ const ped=new THREE.Mesh(new THREE.CylinderGeometry(0.9,1.1,0.35,48), pbr(0x111827,{metalness:.5,roughness:.4})); ped.position.y=0.17; benefits.add(ped); const k=new THREE.SpotLight(0xffffff,50,10,0.6,0.6,1.5); k.position.set(2,4,3); k.target=ped; benefits.add(k); benefits.add(k.target); const r=new THREE.PointLight(0x8b5cf6,14,8,2); r.position.set(-2.5,1.5,-2); benefits.add(r); const fill=new THREE.PointLight(0xffffff,10,9,2); fill.position.set(0.5,2.2,3.2); benefits.add(fill); const h=new THREE.Mesh(new THREE.RingGeometry(1.4,1.46,96), new THREE.MeshBasicMaterial({color:0x8b5cf6,transparent:true,opacity:.25,side:THREE.DoubleSide})); h.rotation.x=-Math.PI/2; h.position.y=0.02; benefits.add(h); }
 
-// ============================================================================
-//  Intro / outro stage
-// ============================================================================
-const stage = new THREE.Group(); scene.add(stage);
-const introDevice = device.clone(true); introDevice.position.set(0,0,0); introDevice.scale.setScalar(2.2); stage.add(introDevice);
-const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.4,0.3,64), mat(0x0f1424,{metalness:.6,roughness:.35})); pedestal.position.y=-0.15; stage.add(pedestal);
-const haloMat = new THREE.MeshBasicMaterial({color:0x8b5cf6, transparent:true, opacity:.25, side:THREE.DoubleSide});
-const halo = new THREE.Mesh(new THREE.RingGeometry(1.5,1.56,96), haloMat); halo.rotation.x=-Math.PI/2; halo.position.y=0.02; stage.add(halo);
-const pts = new THREE.BufferGeometry(); const N=900, arr=new Float32Array(N*3); for(let i=0;i<N;i++){ const r=2.2+Math.random()*5, a=Math.random()*Math.PI*2, y=(Math.random()-0.3)*4; arr[i*3]=Math.cos(a)*r; arr[i*3+1]=y; arr[i*3+2]=Math.sin(a)*r; }
-pts.setAttribute('position', new THREE.BufferAttribute(arr,3)); const particles = new THREE.Points(pts, new THREE.PointsMaterial({color:0x9fb7ff, size:0.035, transparent:true, opacity:.7})); stage.add(particles);
-const keyLight = new THREE.SpotLight(0xffffff, 60, 12, 0.5, 0.5, 1.5); keyLight.position.set(2,4,3); keyLight.castShadow=true; stage.add(keyLight);
-const rimLight = new THREE.PointLight(0x8b5cf6, 20, 8, 2); rimLight.position.set(-2.5,1.5,-2); stage.add(rimLight);
-
-// lights for the room
-const hemi = new THREE.HemisphereLight(0xdfe8ff, 0x3a2a22, 0.55); scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xfff1dc, 1.2); sun.position.set(-6,5,2); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048); sun.shadow.camera.left=-6; sun.shadow.camera.right=6; sun.shadow.camera.top=6; sun.shadow.camera.bottom=-6; scene.add(sun);
-const amb = new THREE.AmbientLight(0xffffff, 0.22); scene.add(amb);
+const arch = new THREE.Group(); arch.visible=false; stageScene.add(arch);
+function archBox(text,pos,color){ const s=sprite({text,size:30,weight:700,color:'#fff',bg:color,pad:24,radius:20,maxW:460},0.0046); s.position.copy(pos); arch.add(s); return s; }
+archBox('🛎️ 客房话机\nESP32-S3 · 本地唤醒 · AEC', new THREE.Vector3(-3.4,2.25,0), 'rgba(37,99,235,.95)');
+archBox('🧠 Qwen-Audio Realtime\n语音大模型 · Function Calling · 联网搜索', new THREE.Vector3(0.3,3.35,0), 'rgba(139,92,246,.95)');
+archBox('☎️ ai-native-callcenter\nFreeSWITCH · 流程引擎 · AI 坐席', new THREE.Vector3(0.3,1.15,0), 'rgba(6,182,212,.95)');
+archBox('🎧 人工坐席工作台\n弹屏 · 转录 · 一份录音', new THREE.Vector3(3.6,1.15,0), 'rgba(34,197,94,.95)');
+function archLabel(a,b,label){ const s=sprite({text:label,size:24,weight:600,color:'#e9ecff',bg:'rgba(10,14,30,.85)',pad:12,radius:12},0.0036); s.position.copy(a).lerp(b,0.5).add(new THREE.Vector3(0,0.3,0)); arch.add(s); }
+archLabel(new THREE.Vector3(-2.1,2.55,0), new THREE.Vector3(-1.2,3.1,0), 'Wi-Fi · WSS'); archLabel(new THREE.Vector3(-2.1,1.95,0), new THREE.Vector3(-1.2,1.4,0), 'SIP / RTP · G.711'); archLabel(new THREE.Vector3(1.75,1.15,0), new THREE.Vector3(2.2,1.15,0), '转人工 · 上下文同步');
+const archLinks=[ link(new THREE.Vector3(-2.1,2.55,0), new THREE.Vector3(-1.2,3.1,0), 0x8b5cf6, arch), link(new THREE.Vector3(-2.1,1.95,0), new THREE.Vector3(-1.2,1.4,0), 0x22d3ee, arch), link(new THREE.Vector3(1.75,1.15,0), new THREE.Vector3(2.2,1.15,0), 0x22c55e, arch) ];
+archLinks.forEach(L=>{ L.speed=0.5; L.tube.geometry.dispose(); L.tube.geometry=new THREE.TubeGeometry(L.curve,48,0.03,8,false); L.dot.geometry.dispose(); L.dot.geometry=new THREE.SphereGeometry(0.07,16,12); });
 
 // ============================================================================
 //  HUD
 // ============================================================================
 const titleEl = hudText({text:' ', size:52, weight:800});
 const capEl   = hudText({text:' ', size:34, weight:600, bg:'rgba(8,11,24,.72)', pad:22, radius:22, maxW:1500});
-const brand   = hudText({text:'小安 · 酒店客房智能语音话机', size:22, weight:600, color:'rgba(230,236,255,.75)'}); brand.position.set(-REC_W/2+brand.userData.size[0]/2+36, REC_H/2-40, 0); brand.material.opacity=0.9;
-const vignette = new THREE.Mesh(new THREE.PlaneGeometry(REC_W,REC_H), new THREE.ShaderMaterial({transparent:true, depthTest:false, uniforms:{}, vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} ', fragmentShader:'varying vec2 vUv; void main(){ vec2 d=vUv-0.5; float v=smoothstep(0.35,0.95,length(d)*1.3); gl_FragColor=vec4(0.0,0.0,0.02,v*0.75);} '})); vignette.renderOrder=1; hud.add(vignette);
-function setTitle(text){ const {tex,w,h} = textTexture({text, size:52, weight:800}); titleEl.material.map.dispose(); titleEl.material.map=tex; titleEl.geometry.dispose(); titleEl.geometry=new THREE.PlaneGeometry(w,h); titleEl.position.set(0, REC_H/2-120, 0); }
-let curCapText=''; function setCaption(text){ if(text===curCapText) return; curCapText=text; fadeTo(capEl,0,0.25); setTimeout(()=>{ const {tex,w,h}=textTexture({text, size:34, weight:600, bg:'rgba(8,11,24,.72)', pad:22, radius:22, maxW:1500}); capEl.material.map.dispose(); capEl.material.map=tex; capEl.geometry.dispose(); capEl.geometry=new THREE.PlaneGeometry(w,h); capEl.position.set(0,-REC_H/2+110,0); fadeTo(capEl,1,0.35); }, 260); }
+const brand   = hudText({text:'小安 · 酒店客房智能语音话机', size:22, weight:600, color:'rgba(230,236,255,.85)'}); brand.position.set(-REC_W/2+brand.userData.size[0]/2+36, REC_H/2-40, 0); brand.material.opacity=0.9;
+const vignette = new THREE.Mesh(new THREE.PlaneGeometry(REC_W,REC_H), new THREE.ShaderMaterial({transparent:true, depthTest:false, vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} ', fragmentShader:'varying vec2 vUv; void main(){ vec2 d=vUv-0.5; float v=smoothstep(0.38,0.95,length(d)*1.3); gl_FragColor=vec4(0.0,0.0,0.02,v*0.6);} '})); vignette.renderOrder=1; hud.add(vignette);
+function setTitle(text){ const {tex,w,h}=textTexture({text,size:52,weight:800}); titleEl.material.map.dispose(); titleEl.material.map=tex; titleEl.geometry.dispose(); titleEl.geometry=new THREE.PlaneGeometry(w,h); titleEl.position.set(0,REC_H/2-120,0); }
+let curCapText=''; function setCaption(text){ if(text===curCapText) return; curCapText=text; fadeTo(capEl,0,0.25); setTimeout(()=>{ const {tex,w,h}=textTexture({text,size:34,weight:600,bg:'rgba(8,11,24,.72)',pad:22,radius:22,maxW:1500}); capEl.material.map.dispose(); capEl.material.map=tex; capEl.geometry.dispose(); capEl.geometry=new THREE.PlaneGeometry(w,h); capEl.position.set(0,-REC_H/2+110,0); fadeTo(capEl,1,0.35); },260); }
 
 // ============================================================================
 //  Scene logic
 // ============================================================================
-let lampDim = 0, ringPulse = 0, eyesOn = 0, phoneOn = 0, screenOn = 0;
-const state = { cur:-1, local:0, fired:new Set() };
-function at(key, tLocal, now, fn){ if (now>=tLocal && !state.fired.has(key)) { state.fired.add(key); fn(); } }
-
+let ringPulse=0, eyesOn=0, screenOn=0, phoneOn=0, lampDim=0;
+const state={cur:-1, local:0, fired:new Set()};
+function at(key,tLocal,now,fn){ if(now>=tLocal && !state.fired.has(key)){ state.fired.add(key); fn(); } }
 function enterScene(i){
-  const s = SCENES[i]; state.cur=i; state.fired.clear(); curCapText='';
-  fadeTo(titleEl,0,0.2); setTimeout(()=>{ setTitle(s.title); fadeTo(titleEl,1,0.5); }, 220);
-  fadeTo(capEl,0,0.2);
-  clearBubbles(); links.forEach(linkOff); fadeTo(agentScreen,0,0.2); fadeTo(transferTag,0,0.2); fadeTo(phoneGlyph,0,0.2); phoneOn=0;
-  const isStage = s.id==='intro'||s.id==='outro';
-  stage.visible = isStage; room.visible = !isStage && s.id!=='benefits' && s.id!=='arch'; benefits.visible = s.id==='benefits'; arch.visible = s.id==='arch';
+  const s=SCENES[i]; state.cur=i; state.fired.clear(); curCapText='';
+  fadeTo(titleEl,0,0.2); setTimeout(()=>{ setTitle(s.title); fadeTo(titleEl,1,0.5); },220);
+  fadeTo(capEl,0,0.2); clearBubbles(); links.forEach(linkOff); fadeTo(agentScreen,0,0.2); fadeTo(transferTag,0,0.2);
+  for (const d of [device,stageDevice,benDevice]) fadeTo(d.userData.glyph,0,0.2); phoneOn=0;
+  const inRoom = ['room','wake','chat','call','handoff'].includes(s.id);
+  active = inRoom ? room : stageScene;
+  stageDevice.visible = pedestal.visible = halo.visible = (s.id==='intro'||s.id==='outro');
+  benefits.visible = s.id==='benefits'; arch.visible = s.id==='arch';
   cloud.visible = s.id==='call'||s.id==='handoff';
-  cloudLabels.forEach((l,i)=>fadeTo(l, cloud.visible?1:0, 0.5, cloud.visible?0.4+i*0.15:0));
-  scene.fog.density = isStage?0.05 : (s.id==='benefits'||s.id==='arch')?0.02 : 0.028;
-  scene.background.set(isStage||s.id==='benefits'||s.id==='arch' ? 0x070a16 : 0x0b1020);
-  if (s.id==='benefits') benefits.children.forEach(c=>{ if(c.isSprite){ c.material.opacity=0; } });
-  if (s.id==='arch') { arch.children.forEach(c=>{ if(c.isSprite) c.material.opacity=0; }); archLinks.forEach((L,i)=>linkOn(L, 0.6+i*0.5)); } else archLinks.forEach(linkOff);
+  cloudLabels.forEach((l,k)=>fadeTo(l, cloud.visible?1:0, 0.5, cloud.visible?0.4+k*0.15:0));
+  if (s.id==='benefits') benefits.children.forEach(c=>{ if(c.isSprite) c.material.opacity=0; });
+  if (s.id==='arch') { arch.children.forEach(c=>{ if(c.isSprite) c.material.opacity=0; }); archLinks.forEach((L,k)=>linkOn(L,0.6+k*0.5)); }
   if (s.id==='intro'||s.id==='room') { screenOn=0; eyesOn=0; ringPulse=0; lampDim=0; }
+  if (s.id==='room') playClip('idle');
 }
-
-function updateScene(dt, tAbs){
-  // which scene
-  let i = SCENES.findIndex(s=>tAbs < s.start+s.dur); if (i<0) i = SCENES.length-1;
-  if (i!==state.cur) enterScene(i);
-  const s = SCENES[i]; const tl = tAbs - s.start; state.local = tl; const u = tl/s.dur;
-  // camera keyframes
-  const k = s.cam; let a=k[0], b=k[k.length-1]; for (let j=0;j<k.length-1;j++){ if (u>=k[j].t && u<=k[j+1].t){ a=k[j]; b=k[j+1]; break; } }
-  const uu = ease((u-a.t)/Math.max(1e-6,(b.t-a.t)));
+function updateScene(dt,tAbs){
+  let i=SCENES.findIndex(s=>tAbs<s.start+s.dur); if(i<0) i=SCENES.length-1;
+  if(i!==state.cur) enterScene(i);
+  const s=SCENES[i]; const tl=tAbs-s.start; state.local=tl; const u=tl/s.dur;
+  const k=s.cam; let a=k[0], b=k[k.length-1]; for(let j=0;j<k.length-1;j++){ if(u>=k[j].t&&u<=k[j+1].t){a=k[j];b=k[j+1];break;} }
+  const uu=ease((u-a.t)/Math.max(1e-6,(b.t-a.t)));
   camera.position.lerpVectors(V3(a.pos),V3(b.pos),uu); camera.lookAt(V3(a.look).lerp(V3(b.look),uu));
-  // captions
-  let cap = ''; for (const c of s.captions) if (tl>=c.t) cap=c.text; if (cap) setCaption(cap);
+  let cap=''; for(const c of s.captions) if(tl>=c.t) cap=c.text; if(cap) setCaption(cap);
 
-  const dev = device; // room device
-  switch (s.id) {
-    case 'intro': {
-      introDevice.rotation.y = tl*0.5; particles.rotation.y = tl*0.04; halo.scale.setScalar(1+0.03*Math.sin(tl*2));
-      screenOn = 1; eyesOn = 1; ringPulse = 0.6+0.4*Math.sin(tl*2.2);
-      break; }
-    case 'room': { screenOn = 0.35; eyesOn = 0; ringPulse = 0; break; }
-    case 'wake': {
-      at('b1',0.4,tl,()=>{ bubble('你好小安', 'guest', new THREE.Vector3(0.25,1.62,-1.0)); fadeTo(bubbles[0],1,0.3); waveBurst(); });
+  switch(s.id){
+    case 'intro': stageDevice.rotation.y=tl*0.5; screenOn=1; eyesOn=1; ringPulse=0.6+0.4*Math.sin(tl*2.2); break;
+    case 'room': screenOn=0.3; eyesOn=0; ringPulse=0; break;
+    case 'wake':
+      at('b1',0.4,tl,()=>{ playClip('agree',0.3,false); const b=bubble('你好小安','guest',guestBubblePos()); fadeTo(b,1,0.3); waveBurst(); });
       at('on',1.6,tl,()=>{ screenOn=1; });
-      eyesOn = tl>1.6 ? 1 : 0; ringPulse = tl>1.8 ? 0.5+0.5*Math.sin((tl-1.8)*3.5) : 0;
-      at('b2',3.0,tl,()=>{ const b = bubble('叮～ 您好，我是小安，想聊点什么？', 'ai', new THREE.Vector3(-1.05,1.6,-2.15)); fadeTo(b,1,0.3); });
-      break; }
+      eyesOn = tl>1.6?1:0; ringPulse = tl>1.8? 0.5+0.5*Math.sin((tl-1.8)*3.5):0;
+      at('b2',3.0,tl,()=>{ const b=bubble('叮～ 您好，我是小安，想聊点什么？','ai',devBubblePos()); fadeTo(b,1,0.3); });
+      at('idle',2.6,tl,()=>playClip('idle',0.4));
+      break;
     case 'chat': {
-      eyesOn = 1; screenOn = 1;
-      const script = [[0.3,'guest','明天几点退房？'],[1.9,'ai','中午 12 点前退房就可以。'],[4.9,'guest','把灯调暗一点'],[6.2,'ai','好的，灯调暗了 ✓'],[8.0,'guest','声音小一点'],[9.2,'ai','音量调到 40% ✓'],[10.6,'guest','现在几点？'],[11.5,'ai','现在是晚上 9 点 25 分。']];
-      script.forEach(([t,who,text],idx)=>at('c'+idx,t,tl,()=>{ if (idx%2===0 && idx>0) clearBubbles(); const b = bubble(text, who, who==='guest'? new THREE.Vector3(0.25,1.62,-1.0) : new THREE.Vector3(-1.05,1.6,-2.15)); fadeTo(b,1,0.3); if(who==='guest') waveBurst(); }));
-      ringPulse = (tl>1.9&&tl<4.5)||(tl>6.2&&tl<7.6)||(tl>9.2&&tl<10.4)||(tl>11.5) ? 0.5+0.5*Math.sin(tl*6) : 0;
-      lampDim = tl>6.2 ? Math.min(1,(tl-6.2)/1.2) : 0;
-      break; }
-    case 'call': {
       eyesOn=1; screenOn=1;
-      at('g',0.4,tl,()=>{ const b=bubble('帮我打给前台','guest',new THREE.Vector3(0.25,1.62,-1.0)); fadeTo(b,1,0.3); waveBurst(); });
-      at('a',1.8,tl,()=>{ const b=bubble('好的，马上为您接通前台。','ai',new THREE.Vector3(-1.05,1.6,-2.15)); fadeTo(b,1,0.3); });
-      at('ph',3.2,tl,()=>{ fadeTo(phoneGlyph,1,0.3); phoneOn=1; linkOn(Ldev,0.2); });
-      at('fs',4.6,tl,()=>{ linkOn(Lai,0.1); });
-      at('ai',6.5,tl,()=>{ clearBubbles(); const b=bubble('您好，前台客服为您服务，请问需要什么帮助？','ai',wAI.clone().add(new THREE.Vector3(1.0,0.6,1.0)), 0.0032); fadeTo(b,1,0.3); });
-      at('ai2',9.2,tl,()=>{ const b=bubble('空调没冷气，1208 房。','guest',wFS.clone().add(new THREE.Vector3(-0.4,0.6,1.0)), 0.0032); fadeTo(b,1,0.3); });
-      ringPulse = phoneOn ? 0.3+0.2*Math.sin(tl*8) : (tl>1.8&&tl<3.2 ? 0.5+0.5*Math.sin(tl*6):0);
-      nAI.rotation.y = Math.sin(tl*1.5)*0.15;
+      const script=[[0.3,'guest','明天几点退房？'],[1.9,'ai','中午 12 点前退房就可以。'],[4.9,'guest','把灯调暗一点'],[6.2,'ai','好的，灯调暗了 ✓'],[8.0,'guest','声音小一点'],[9.2,'ai','音量调到 40% ✓'],[10.6,'guest','现在几点？'],[11.5,'ai','现在是晚上 9 点 25 分。']];
+      script.forEach(([t,who,text],idx)=>at('c'+idx,t,tl,()=>{ if(idx%2===0&&idx>0) clearBubbles(); const b=bubble(text,who,who==='guest'?guestBubblePos():devBubblePos()); fadeTo(b,1,0.3); if(who==='guest'){ waveBurst(); playClip(idx%4===0?'agree':'headShake',0.3,false); setTimeout(()=>playClip('idle',0.5),1500);} }));
+      ringPulse=(tl>1.9&&tl<4.5)||(tl>6.2&&tl<7.6)||(tl>9.2&&tl<10.4)||(tl>11.5)?0.5+0.5*Math.sin(tl*6):0;
+      lampDim = tl>6.2? Math.min(1,(tl-6.2)/1.2):0;
       break; }
-    case 'handoff': {
-      eyesOn=1; screenOn=1; phoneOn=1; phoneGlyph.material.opacity=1; ringPulse=0.3+0.2*Math.sin(tl*8);
+    case 'call':
+      eyesOn=1; screenOn=1;
+      at('g',0.4,tl,()=>{ playClip('agree',0.3,false); setTimeout(()=>playClip('idle',0.5),1500); const b=bubble('帮我打给前台','guest',guestBubblePos()); fadeTo(b,1,0.3); waveBurst(); });
+      at('a',1.8,tl,()=>{ const b=bubble('好的，马上为您接通前台。','ai',devBubblePos()); fadeTo(b,1,0.3); });
+      at('ph',3.2,tl,()=>{ fadeTo(device.userData.glyph,1,0.3); phoneOn=1; linkOn(Ldev,0.2); });
+      at('fs',4.6,tl,()=>linkOn(Lai,0.1));
+      at('ai',6.5,tl,()=>{ clearBubbles(); const b=bubble('您好，前台客服为您服务，请问需要什么帮助？','ai',wAI.clone().add(new THREE.Vector3(0.3,0.3,0.4)),0.0014); fadeTo(b,1,0.3); });
+      at('ai2',9.2,tl,()=>{ const b=bubble('空调没冷气，1208 房。','guest',wFS.clone().add(new THREE.Vector3(-0.2,0.3,0.4)),0.0014); fadeTo(b,1,0.3); });
+      ringPulse = phoneOn? 0.3+0.2*Math.sin(tl*8) : (tl>1.8&&tl<3.2? 0.5+0.5*Math.sin(tl*6):0);
+      nAI.rotation.y=Math.sin(tl*1.5)*0.15;
+      break;
+    case 'handoff':
+      eyesOn=1; screenOn=1; phoneOn=1; device.userData.glyph.material.opacity=1; ringPulse=0.3+0.2*Math.sin(tl*8);
       at('l1',0.0,tl,()=>{ linkOn(Ldev,0); linkOn(Lai,0); });
-      at('ai',0.6,tl,()=>{ const b=bubble('需要工程部上门检修，我帮您转人工。','ai',wAI.clone().add(new THREE.Vector3(-0.9,0.6,1.0)), 0.0032); fadeTo(b,1,0.3); });
-      at('tag',2.6,tl,()=>{ fadeTo(transferTag,1,0.3); });
-      at('hu',3.6,tl,()=>{ linkOn(Lhu,0); });
+      at('ai',0.6,tl,()=>{ const b=bubble('需要工程部上门检修，我帮您转人工。','ai',wAI.clone().add(new THREE.Vector3(-0.4,0.3,0.4)),0.0014); fadeTo(b,1,0.3); });
+      at('tag',2.6,tl,()=>fadeTo(transferTag,1,0.3));
+      at('hu',3.6,tl,()=>linkOn(Lhu,0));
       at('scr',5.4,tl,()=>{ fadeTo(transferTag,0,0.3); fadeTo(agentScreen,1,0.4); clearBubbles(); });
-      at('hu2',8.0,tl,()=>{ const b=bubble('您好，我是前台小李，1208 房空调的问题已看到，工程师 10 分钟内到。','ai',wHu.clone().add(new THREE.Vector3(-0.4,0.65,1.0)), 0.0032); fadeTo(b,1,0.3); });
-      nHu.rotation.y = Math.sin(tl*1.2)*0.12; aiAnt.material.color.setHSL(0.5+0.1*Math.sin(tl*4),1,0.6);
-      break; }
+      at('hu2',8.0,tl,()=>{ const b=bubble('您好，我是前台小李，1208 房空调的问题已看到，工程师 10 分钟内到。','ai',wHu.clone().add(new THREE.Vector3(-0.2,0.32,0.4)),0.0014); fadeTo(b,1,0.3); });
+      nHu.rotation.y=Math.sin(tl*1.2)*0.12; aiAnt.material.color.setHSL(0.5+0.1*Math.sin(tl*4),1,0.6);
+      break;
     case 'benefits': {
-      const adt = Math.max(dt, 0.016);
-      benefits.rotation.y = Math.sin(tl*0.35)*0.12; benDevice.rotation.y = -benefits.rotation.y + Math.sin(tl*0.8)*0.35;   // gentle sway; the camera does the orbiting
-      benefits.children.forEach((c,idx)=>{ if(!c.isSprite) return; const showAt = 0.3 + (idx%7)*0.55; if (tl>showAt && c.material.opacity<1) c.material.opacity = Math.min(1, c.material.opacity + adt*2.5); c.position.y = 1.25 + Math.sin(c.userData.a*2 + tl*1.3)*0.18; });
-      screenOn=1; eyesOn=1; ringPulse=0.5+0.5*Math.sin(tl*2.5);
-      break; }
-    case 'arch': {
-      const adt = Math.max(dt, 0.016); let n=0; arch.children.forEach(c=>{ if(!c.isSprite) return; const showAt = 0.3 + (n++)*0.35; if (tl>showAt && c.material.opacity<1) c.material.opacity = Math.min(1, c.material.opacity + adt*2.5); });
-      arch.children.forEach(c=>{ if(c.isSprite && c!==aLLM&&c!==aCC) c.position.y += Math.sin(tl*1.2 + c.position.x)*0.0006; });
-      break; }
-    case 'outro': {
-      introDevice.rotation.y = tl*0.35; particles.rotation.y = tl*0.04; screenOn=1; eyesOn=1; ringPulse=0.6+0.4*Math.sin(tl*2.2);
-      break; }
+      const adt=Math.max(dt,0.016); benefits.rotation.y=Math.sin(tl*0.35)*0.12; benDevice.rotation.y=-benefits.rotation.y+Math.sin(tl*0.8)*0.35;
+      benefits.children.forEach((c,idx)=>{ if(!c.isSprite) return; const showAt=0.3+(idx%7)*0.55; if(tl>showAt&&c.material.opacity<1) c.material.opacity=Math.min(1,c.material.opacity+adt*2.5); c.position.y=1.45+Math.sin(c.userData.a*2+tl*1.3)*0.18; });
+      screenOn=1; eyesOn=1; ringPulse=0.5+0.5*Math.sin(tl*2.5); break; }
+    case 'arch': { const adt=Math.max(dt,0.016); let n=0; arch.children.forEach(c=>{ if(!c.isSprite) return; const showAt=0.3+(n++)*0.35; if(tl>showAt&&c.material.opacity<1) c.material.opacity=Math.min(1,c.material.opacity+adt*2.5); }); break; }
+    case 'outro': stageDevice.rotation.y=tl*0.35; screenOn=1; eyesOn=1; ringPulse=0.6+0.4*Math.sin(tl*2.2); break;
   }
-  // apply device visual state to both device clones
-  for (const d of [device, introDevice, benDevice]) {
-    const sm = d.children.find(c=>c.geometry && c.geometry.type==='CircleGeometry');
-    if (!sm) continue;
-    sm.material.emissiveIntensity = lerp(0.15, 0.9, screenOn);
-    const ey = sm.children.find(c=>c.isGroup); const rg = sm.children.find(c=>c.geometry&&c.geometry.type==='RingGeometry');
-    if (ey) ey.children.forEach(e=>{ e.material.opacity = eyesOn; });
-    if (rg) { rg.material.opacity = ringPulse*0.95; const sc = 1+0.06*ringPulse; rg.scale.set(sc,sc,1); }
+  for (const d of [device,stageDevice,benDevice]) {
+    const {screen,eyes,ring,glow} = d.userData;
+    screen.material.emissiveIntensity = lerp(0.12, 0.9, screenOn);
+    eyes.children.forEach(e=>{ e.material.opacity=eyesOn; });
+    ring.material.opacity=ringPulse*0.95; const sc=1+0.06*ringPulse; ring.scale.set(sc,sc,1);
+    glow.intensity = ringPulse*(d===device?0.5:1.2);
   }
-  screenGlow.intensity = ringPulse*1.2;
-  lampLight.intensity = lerp(2.6, 0.7, lampDim); shadeMat.emissiveIntensity = lerp(0.9, 0.25, lampDim);
-  // keep bubbles facing camera (sprites do) — nothing to do
+  lampLight.intensity = lerp(1.6, 0.45, lampDim);
+  room.backgroundIntensity = lerp(1.0, 0.72, lampDim);
+  if (mixer) { mixer.update(dt); applySeated(); }
 }
+
+// ============================================================================
+//  Loading
+// ============================================================================
+const bar=document.querySelector('#bar i'), ltxt=document.getElementById('ltxt');
+function prog(p,txt){ bar.style.width=(p*100)+'%'; if(txt) ltxt.textContent=txt; }
+let loaded=0; const done=()=>{ loaded++; if(loaded>=2){ prog(1,'就绪'); setTimeout(()=>document.getElementById('loading').classList.add('done'),300); } };
+
+new RGBELoader().load('./assets/hotel_room_2k.hdr', tex=>{
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  room.background = tex; room.environment = tex;
+  room.backgroundRotation.y = PANO_YAW; room.environmentRotation.y = PANO_YAW;
+  room.backgroundIntensity = 1.0; room.environmentIntensity = 0.9;
+  stageScene.environment = tex; stageScene.environmentIntensity = 0.35;
+  prog(0.55,'正在加载人物模型…'); done();
+}, xhr=>{ if(xhr.total) prog(0.5*xhr.loaded/xhr.total,'正在加载酒店客房全景…'); }, err=>{ console.error(err); ltxt.textContent='全景加载失败'; done(); });
+
+new GLTFLoader().load('./assets/Xbot.glb', gltf=>{
+  guest = gltf.scene; dressGuest(guest);
+  guest.scale.setScalar(0.95); guest.position.set(GUEST_POS.x, 0, GUEST_POS.z);   // hips are re-pinned to the seat point every frame (see applySeated)
+  // Mixamo rigs face +Z. Turn the body toward the ledge/device.
+  // face the device but turned ~35° toward the camera so the face is visible
+  // camera sits at +x,-z of the guest; device at -x,+z. Face roughly toward the camera side
+  // (3/4 front) and let the head turn toward the device each frame.
+  // Face the camera (+x,-z side) three-quarters: body yaw points toward the foot of the bed.
+  guest.rotation.y = Math.atan2(1.0-GUEST_POS.x, -1.4-GUEST_POS.z) - 0.55;
+  room.add(guest);
+  mixer = new THREE.AnimationMixer(guest);
+  gltf.animations.forEach(c=>{ clips[c.name]=mixer.clipAction(c); });
+  const bone = n => guest.getObjectByName('mixamorig'+n) || guest.getObjectByName('mixamorig:'+n);   // GLTFLoader strips the ':'
+  headBone = bone('Head');
+  seat = { hips: bone('Hips'), lUp: bone('LeftUpLeg'), rUp: bone('RightUpLeg'), lLeg: bone('LeftLeg'), rLeg: bone('RightLeg'), spine: bone('Spine'), lArm: bone('LeftArm'), rArm: bone('RightArm'), lFore: bone('LeftForeArm'), rFore: bone('RightForeArm') };
+  playClip('idle',0);
+  prog(1,'就绪'); done();
+}, xhr=>{ if(xhr.total) prog(0.5+0.5*xhr.loaded/xhr.total,'正在加载人物模型…'); }, err=>{ console.error(err); ltxt.textContent='人物模型加载失败'; done(); });
 
 // ============================================================================
 //  Playback & recording
 // ============================================================================
-let playing = false, time = Math.max(0, Math.min(TOTAL-0.01, +Q.get('t') || 0)), speed = 1, last = performance.now();   // ?t=SECONDS seeks for screenshots
-const ui = document.getElementById('ui'), top = document.getElementById('top'), hint = document.getElementById('hint');
-const playBtn = document.getElementById('play'), progEl = document.querySelector('#prog i'), infoEl = document.getElementById('info');
-function setPlaying(p){ playing=p; playBtn.textContent = p?'❚❚ 暂停':'▶ 播放'; }
-document.getElementById('play').onclick = ()=>setPlaying(!playing);
-document.getElementById('prev').onclick = ()=>{ const i = Math.max(0,(state.cur<0?0:state.cur) - (state.local<1?1:0)); time = SCENES[i].start; state.cur=-1; };
-document.getElementById('next').onclick = ()=>{ const i = Math.min(SCENES.length-1,(state.cur<0?0:state.cur)+1); time = SCENES[i].start; state.cur=-1; };
-document.getElementById('speed').onchange = e=>speed=+e.target.value;
-document.getElementById('prog').onclick = e=>{ const r=e.currentTarget.getBoundingClientRect(); time = TOTAL*(e.clientX-r.left)/r.width; state.cur=-1; };
-window.addEventListener('keydown', e=>{ if(e.code==='Space'){ e.preventDefault(); setPlaying(!playing);} if(e.key==='ArrowRight') document.getElementById('next').click(); if(e.key==='ArrowLeft') document.getElementById('prev').click(); if(e.key==='r'||e.key==='R'){ time=0; state.cur=-1; } });
-
-let lastReal = performance.now();
-let recorder=null, chunks=[];
-const recBtn = document.getElementById('rec');
-function startRec(){
-  const stream = renderer.domElement.captureStream(30);
-  const mime = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'].find(m=>MediaRecorder.isTypeSupported(m));
-  recorder = new MediaRecorder(stream, { mimeType:mime, videoBitsPerSecond: 16_000_000 }); chunks=[];
-  recorder.ondataavailable = e=>{ if(e.data.size) chunks.push(e.data); };
-  recorder.onstop = ()=>{ const blob = new Blob(chunks,{type:mime}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='xiaoan-hotel-intro.'+(mime.includes('mp4')?'mp4':'webm'); a.click(); ui.classList.remove('hidden'); top.classList.remove('hidden'); hint.classList.remove('hidden'); recBtn.classList.remove('on'); recBtn.textContent='● 录制'; recorder=null; setPlaying(false); };
-  time=0; state.cur=-1; speed=1; document.getElementById('speed').value='1'; ui.classList.add('hidden'); hint.classList.add('hidden'); top.classList.add('hidden'); recBtn.classList.add('on'); recBtn.textContent='■ 停止';
-  setPlaying(true); recorder.start(250);
-}
-function stopRec(){ if(recorder && recorder.state!=='inactive') recorder.stop(); }
-recBtn.onclick = ()=> recorder ? stopRec() : startRec();
+let playing=false, time=Math.max(0,Math.min(TOTAL-0.01,+Q.get('t')||0)), speed=1, last=performance.now(), lastReal=performance.now();
+const ui=document.getElementById('ui'), top=document.getElementById('top'), hint=document.getElementById('hint');
+const playBtn=document.getElementById('play'), progEl=document.querySelector('#prog i'), infoEl=document.getElementById('info');
+function setPlaying(p){ playing=p; playBtn.textContent=p?'❚❚ 暂停':'▶ 播放'; }
+document.getElementById('play').onclick=()=>setPlaying(!playing);
+document.getElementById('prev').onclick=()=>{ const i=Math.max(0,(state.cur<0?0:state.cur)-(state.local<1?1:0)); time=SCENES[i].start; state.cur=-1; };
+document.getElementById('next').onclick=()=>{ const i=Math.min(SCENES.length-1,(state.cur<0?0:state.cur)+1); time=SCENES[i].start; state.cur=-1; };
+document.getElementById('speed').onchange=e=>speed=+e.target.value;
+document.getElementById('prog').onclick=e=>{ const r=e.currentTarget.getBoundingClientRect(); time=TOTAL*(e.clientX-r.left)/r.width; state.cur=-1; };
+window.addEventListener('keydown',e=>{ if(e.code==='Space'){e.preventDefault();setPlaying(!playing);} if(e.key==='ArrowRight') document.getElementById('next').click(); if(e.key==='ArrowLeft') document.getElementById('prev').click(); if(e.key==='r'||e.key==='R'){time=0;state.cur=-1;} });
+let recorder=null, chunks=[]; const recBtn=document.getElementById('rec');
+function startRec(){ const stream=renderer.domElement.captureStream(30); const mime=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'].find(m=>MediaRecorder.isTypeSupported(m)); recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:16_000_000}); chunks=[]; recorder.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); }; recorder.onstop=()=>{ const blob=new Blob(chunks,{type:mime}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='xiaoan-hotel-intro.'+(mime.includes('mp4')?'mp4':'webm'); a.click(); ui.classList.remove('hidden'); top.classList.remove('hidden'); hint.classList.remove('hidden'); recBtn.classList.remove('on'); recBtn.textContent='● 录制'; recorder=null; setPlaying(false); };
+  time=0; state.cur=-1; speed=1; document.getElementById('speed').value='1'; ui.classList.add('hidden'); hint.classList.add('hidden'); top.classList.add('hidden'); recBtn.classList.add('on'); recBtn.textContent='■ 停止'; setPlaying(true); recorder.start(250); }
+function stopRec(){ if(recorder&&recorder.state!=='inactive') recorder.stop(); }
+recBtn.onclick=()=>recorder?stopRec():startRec();
 
 function frame(now){
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05,(now-last)/1000)*speed; last = now;
-  if (playing) { time += dt; if (time>=TOTAL){ time = TOTAL-0.001; if (recorder) { stopRec(); } else setPlaying(false); } }
-  const rdt = Math.min(0.1,(now-lastReal)/1000); lastReal = now;
-  updateScene(playing?dt:0, time); stepFades(rdt); stepWaves(playing?dt:rdt); stepLinks(playing?dt:rdt);
-  renderer.clear(); renderer.render(scene,camera); renderer.clearDepth(); renderer.render(hud,hudCam);
-  progEl.style.width = (100*time/TOTAL)+'%';
-  const s = SCENES[state.cur<0?0:state.cur]; infoEl.textContent = `${(state.cur<0?0:state.cur)+1}/${SCENES.length} ${s.title} · ${time.toFixed(0)}s / ${TOTAL}s`;
+  const dt=Math.min(0.05,(now-last)/1000)*speed; last=now; const rdt=Math.min(0.1,(now-lastReal)/1000); lastReal=now;
+  if(playing){ time+=dt; if(time>=TOTAL){ time=TOTAL-0.001; if(recorder) stopRec(); else setPlaying(false); } }
+  updateScene(playing?dt:0,time); stepFades(rdt); stepWaves(playing?dt:rdt); stepLinks(playing?dt:rdt);
+  renderer.clear(); renderer.render(active,camera); renderer.clearDepth(); renderer.render(hud,hudCam);
+  progEl.style.width=(100*time/TOTAL)+'%';
+  const s=SCENES[state.cur<0?0:state.cur]; infoEl.textContent=`${(state.cur<0?0:state.cur)+1}/${SCENES.length} ${s.title} · ${time.toFixed(0)}s / ${TOTAL}s`;
 }
-window.__dbg = { scene, benefits, benDevice, device, introDevice, camera, SCENES, state };   // console inspection
+window.__dbg={room,stageScene,device,camera,SCENES,state,get guest(){return guest},get headBone(){return headBone},BED_DIR,NS_POS,GUEST_POS};
 updateScene(0,time); requestAnimationFrame(frame);
 </script>
 </body>

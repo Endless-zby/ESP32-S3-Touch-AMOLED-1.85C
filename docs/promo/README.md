@@ -1,6 +1,7 @@
 # 小安 · 酒店场景宣传短片（Three.js 3D）
 
-`index.html` 是一支用 Three.js 实时渲染的 3D 讲解短片（约 90 秒），内容：
+`index.html` 是一支用 Three.js 实时渲染的 3D 讲解短片（约 90 秒）。客房场景用的是**真实酒店客房的 360° 实拍全景**（Poly Haven `hotel_room`，CC0），
+人物是带骨骼动画的三维人物模型，话机、对话气泡、云端节点以 PBR 材质合成进实拍场景并跟随全景光照。内容：
 小安话机放在客房里怎么用 → 「你好小安」唤醒 → 语音对话与设备控制 → 一句话呼叫前台 →
 云端 AI 客服先接、搞不定自动转人工坐席（对话记录同步）→ 好处总结 → 架构 → 片尾。
 
@@ -53,10 +54,20 @@ ffmpeg -i xiaoan-hotel-intro.mp4 -i voice.m4a -c:v copy -c:a aac -shortest xiaoa
 ## 文件
 
 ```
-index.html             短片本体（Three.js r170，ES Module）
-three.module.min.js    Three.js 本地副本（离线可用）
-script.md              逐幕旁白 / 字幕稿
-preview/               各幕截图（README 用）
+index.html                 短片本体（Three.js r170，ES Module）
+index.v1-geometry.html     旧版：纯几何体搭建的卡通客房（备份）
+three.module.min.js        Three.js 本地副本（离线可用）
+assets/hotel_room_2k.hdr   酒店客房实拍 360° HDR 全景（Poly Haven，CC0）
+assets/Xbot.glb            带 Mixamo 骨骼与动作（idle / agree / headShake）的人物模型（three.js 示例）
+assets/jsm/                RGBELoader / GLTFLoader（随 three.js r170）
+script.md                  逐幕旁白 / 字幕稿
+preview/                   各幕截图（README 用）
 ```
+
+## 素材与版权
+
+- 客房全景：[Poly Haven · Hotel Room](https://polyhaven.com/a/hotel_room)，作者 Greg Zaal，CC0，可商用。
+- 人物模型：three.js 示例资产 `Xbot.glb`（MIT）。片中通过顶点着色赋予肤色与衣着，并以程序化姿态让其坐在床沿、头部跟随话机。
+- 首次打开需加载约 9 MB（全景 6 MB + 人物 3 MB），之后由浏览器缓存。
 
 修改文案：`index.html` 顶部的 `SCENES` 数组，每一幕有 `title`、`captions`（带时间点）、镜头关键帧。
