@@ -51,6 +51,15 @@
 
 ---
 
+## 🎬 宣传短片
+
+`docs/promo/` 里有一支 Three.js 实时渲染的 3D 讲解短片（约 90 秒）：客房场景、「你好小安」唤醒、语音控制、
+一句话呼叫前台、云端 AI 客服先接、搞不定自动转人工坐席。浏览器打开即播，可一键录成视频，详见 [docs/promo/README.md](docs/promo/README.md)。
+
+<p align="center"><img src="docs/promo/preview/05-call.jpg" width="49%"> <img src="docs/promo/preview/06-handoff.jpg" width="49%"></p>
+
+---
+
 ## 🧩 硬件
 
 | 部件 | 型号 | 说明 |
